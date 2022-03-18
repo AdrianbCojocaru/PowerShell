@@ -1,0 +1,24 @@
+﻿Logs/
+logs/
+log/
+Log/
+CollectedLogs/
+output/
+Output/
+backup/
+Backup/
+Data/
+Mnt/
+Build/
+Reports/
+reports/
+~*.*
+Active Directory/UsersReport.xlsx
+*.log
+*.wim
+*.iso
+*.msu
+*.msi
+MECM/Create New Application/sources/Files/*
+MECM/Create New Application/sources/SupportFiles/*
+MECM/Create New Application/AppPkgConfigData.json
