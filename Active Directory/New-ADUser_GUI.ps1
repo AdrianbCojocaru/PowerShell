@@ -51,7 +51,7 @@ function DC-Connect {
 
 # Connect to Server where the exchange management console is located, import Exchange modules
 function Web-Connect {
-    $RemoteWebSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://WEB-Server01.reddit.co.uk/PowerShell/ -Authentication Kerberos -Credential $UserCredential
+    $RemoteWebSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://WEB-Server01.YourDomain.co.uk/PowerShell/ -Authentication Kerberos -Credential $UserCredential
     Import-PSSession $RemoteWebSession -DisableNameChecking
 }
 
@@ -75,13 +75,12 @@ function NewADUser {
     
     if ($null -eq $UserExists) {
 
-        New-ADUser -SamAccountName $User -Name $DisplayName -GivenName $FirstName_TB.Text -Surname $Surname_TB.Text -DisplayName $DisplayName -Path $global:path -EmailAddress "$User@reddit.co.uk" -UserPrincipalName "$User@reddit.co.uk" `
-            -Manager $Manager -State $global:Location -Office $global:Location -Title $JobTitle_TB.Text  -Company "Reddit" ; $UserDN = Get-ADUser $User ; Sync-ADObject -Object $UserDN.DistinguishedName -DC01 -DC02 ;
-        Enable-RemoteMailbox $user -RemoteRoutingAddress "$user@Reddit.onmicrosoft.com" ; Start-ADSyncSyncCycle -PolicyType Delta ; LogAdd
+        New-ADUser -SamAccountName $User -Name $DisplayName -GivenName $FirstName_TB.Text -Surname $Surname_TB.Text -DisplayName $DisplayName -Path $global:path -EmailAddress "$User@YourDomain.co.uk" -UserPrincipalName "$User@YourDomain.co.uk" `
+            -Manager $Manager -State $global:Location -Office $global:Location -Title $JobTitle_TB.Text  -Company "YourDomain" ; $UserDN = Get-ADUser $User ; Sync-ADObject -Object $UserDN.DistinguishedName -DC01 -DC02 ;
+        Enable-RemoteMailbox $user -RemoteRoutingAddress "$user@YourDomain.onmicrosoft.com" ; Start-ADSyncSyncCycle -PolicyType Delta ; LogAdd
     }
 
-    else
-    {
+    else {
         [system.windows.forms.messagebox]::show("This user already exsits!")
         ; LogAddError
     }
@@ -379,62 +378,62 @@ $LogView.Font = 'Microsoft Sans Serif,10'
 $Event = {
     IF ($Eng_CB.checked) {
         IF ($RdBtn_Aber.Checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site ABERDEEN,DC=reddit,DC=co,DC=uk" ; $global:Location = "Aberdeen" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Aberdeen Engineers"}
+            $global:path = "OU=Engineers,OU=Users,OU=Site ABERDEEN,DC=YourDomain,DC=co,DC=uk" ; $global:Location = "Aberdeen" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Aberdeen Engineers"}
         }
         ELSEIF ($RdBtn_Bov.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site BOVINGTON,DC=reddit,DC=co,DC=uk"; $global:Location = "Bovington"
+            $global:path = "OU=Engineers,OU=Users,OU=Site BOVINGTON,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Bovington"
         } 
         ELSEIF ($RdBtn_Col.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site COLLINGWOOD,DC=reddit,DC=co,DC=uk"; $global:Location = "Collingwood"
+            $global:path = "OU=Engineers,OU=Users,OU=Site COLLINGWOOD,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Collingwood"
         } 
         ELSEIF ($RdBtn_Gla.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site GLASGOW,DC=reddit,DC=co,DC=uk"; $global:Location = "Glasgow" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Glasgow Engineers"}
+            $global:path = "OU=Engineers,OU=Users,OU=Site GLASGOW,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Glasgow" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Glasgow Engineers"}
         }
         ELSEIF ($RdBtn_Inv.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site INVERNESS,DC=reddit,DC=co,DC=uk"; $global:Location = "Inverness" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Inverness Engineers"}
+            $global:path = "OU=Engineers,OU=Users,OU=Site INVERNESS,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Inverness" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Inverness Engineers"}
         }
         ELSEIF ($RdBtn_Edi.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site LOANHEAD,DC=reddit,DC=co,DC=uk"; $global:Location = "Edinburgh" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Edinbrugh Engineers"}
+            $global:path = "OU=Engineers,OU=Users,OU=Site LOANHEAD,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Edinburgh" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Edinbrugh Engineers"}
         }
         ELSEIF ($RdBtn_Los.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site LOSSIEMOUTH,DC=reddit,DC=co,DC=uk"; $global:Location = "Lossiemouth"
+            $global:path = "OU=Engineers,OU=Users,OU=Site LOSSIEMOUTH,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Lossiemouth"
         }
         ELSEIF ($RdBtn_Str.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Users,OU=Site STIRLING,DC=reddit,DC=co,DC=uk"; $global:Location = "Stirling"
+            $global:path = "OU=Engineers,OU=Users,OU=Site STIRLING,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Stirling"
         }
         ELSEIF ($RdBtn_Leu.checked -and $Eng_CB.checked) {
-            $global:path = "OU=Engineers,OU=Office,OU=Users,OU=Site LEUCHARS,DC=reddit,DC=co,DC=uk"; $global:Location = "Leuchars"
+            $global:path = "OU=Engineers,OU=Office,OU=Users,OU=Site LEUCHARS,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Leuchars"
         }
     }
     ELSEIF ($RdBtn_Aber.Checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site ABERDEEN,DC=reddit,DC=co,DC=uk"; $global:Location = "Aberdeen" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Aberdeen Office"}
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site ABERDEEN,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Aberdeen" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Aberdeen Office"}
     }
     ELSEIF ($RdBtn_Bov.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site BOVINGTON,DC=reddit,DC=co,DC=uk"; $global:Location = "Bovington"
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site BOVINGTON,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Bovington"
     } 
     ELSEIF ($RdBtn_Col.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site COLLINGWOOD,DC=reddit,DC=co,DC=uk"; $global:Location = "Collingwood"
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site COLLINGWOOD,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Collingwood"
     } 
     ELSEIF ($RdBtn_Gla.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site GLASGOW,DC=reddit,DC=co,DC=uk"; $global:Location = "Glasgow" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Glasgow Office"}
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site GLASGOW,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Glasgow" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Glasgow Office"}
     }
     ELSEIF ($RdBtn_Inv.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site INVERNESS,DC=reddit,DC=co,DC=uk"; $global:Location = "Inverness"# ; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Inverness Office"}
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site INVERNESS,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Inverness"# ; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Inverness Office"}
     }
     ELSEIF ($RdBtn_Edi.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site LOANHEAD,DC=reddit,DC=co,DC=uk"; $global:Location = "Edinburgh" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Edinburgh Office"}
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site LOANHEAD,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Edinburgh" #; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Edinburgh Office"}
     }
     ELSEIF ($RdBtn_Los.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site LOSSIEMOUTH,DC=reddit,DC=co,DC=uk"; $global:Location = "Lossiemouth"
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site LOSSIEMOUTH,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Lossiemouth"
     }
     ELSEIF ($RdBtn_Str.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site STIRLING,DC=reddit,DC=co,DC=uk"; $global:Location = "Stirling"# ; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Stirling Office"}
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site STIRLING,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Stirling"# ; $global:DistGroup = Get-ADGroup -Filter {name -like "All - Stirling Office"}
     }
     ELSEIF ($RdBtn_Leu.checked) {
-        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site LEUCHARS,DC=reddit,DC=co,DC=uk"; $global:Location = "Leuchars"
+        $global:path = "OU=Folder Redirection,OU=Office,OU=Users,OU=Site LEUCHARS,DC=YourDomain,DC=co,DC=uk"; $global:Location = "Leuchars"
     }
     ELSE {
-        $global:path = "CN=Users,DC=reddit,DC=co,DC=uk"
+        $global:path = "CN=Users,DC=YourDomain,DC=co,DC=uk"
     }
 }
 
