@@ -359,7 +359,7 @@ $UnInstallProgramCommentBoxText.location = New-Object System.Drawing.Point(15, 1
 $UnInstallProgramCommentBoxText.Font = 'Microsoft Sans Serif,10'
 
 $isPowershellPackage = New-Object system.Windows.Forms.CheckBox
-$isPowershellPackage.text = "Powershell Package"
+$isPowershellPackage.text = "Powershell"
 $isPowershellPackage.AutoSize = $false
 $isPowershellPackage.width = 120
 $isPowershellPackage.height = 20
