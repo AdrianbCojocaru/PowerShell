@@ -157,13 +157,13 @@ Function Set-RegistryKey {
   Used to create registry keys and/or write/update registry values.
  .Example
   ### 
-  Set-RegistryKey -Key "HKLM:SOFTWARE\OrclOASIS" -Name "EstimatedRunTime" -Value "8" -Type "String"
+  Set-RegistryKey -Key "HKLM:SOFTWARE\MilkyWay" -Name "EstimatedRunTime" -Value "8" -Type "String"
  .Example
   ### If you are certain that the registry key already exists.
- Set-RegistryKey -Key "HKLM:SOFTWARE\OrclOASIS" -Name "EstimatedRunTime" -Value "8" -Type "String" -CreateNoKey
+ Set-RegistryKey -Key "HKLM:SOFTWARE\MilkyWay" -Name "EstimatedRunTime" -Value "8" -Type "String" -CreateNoKey
  .Example
   ### Set the (Default) value.
- Set-RegistryKey -Key "HKLM:SOFTWARE\OrclOASIS" -Value "8"
+ Set-RegistryKey -Key "HKLM:SOFTWARE\MilkyWay" -Value "8"
 #>
 
     [CmdletBinding()]
@@ -238,11 +238,11 @@ Function Get-RegistryKey {
                                      ==>> Returns ValueNotFound if the registry does not exist. [string]
   If no Name parameter is specified ==> Returns all the <Name - Value> pair under -Key.[PSCustomObject]
  .Example
-  ### Get the value for a registry named "EstimatedChargeRemaining" under "HKLM:SOFTWARE\OrclOASIS" as [string]
-  Get-RegistryKey -Key "HKLM:SOFTWARE\OrclOASIS" -Name "EstimatedChargeRemaining"
+  ### Get the value for a registry named "EstimatedChargeRemaining" under "HKLM:SOFTWARE\MilkyWay" as [string]
+  Get-RegistryKey -Key "HKLM:SOFTWARE\MilkyWay" -Name "EstimatedChargeRemaining"
  .Example
-  ### Get the <Name - Value> pair under Key "HKLM:SOFTWARE\OrclOASIS" as a [PSCustomObject].
-  Get-RegistryKey -Key "HKLM:SOFTWARE\OrclOASIS"
+  ### Get the <Name - Value> pair under Key "HKLM:SOFTWARE\MilkyWay" as a [PSCustomObject].
+  Get-RegistryKey -Key "HKLM:SOFTWARE\MilkyWay"
  .Example
 #>
 
@@ -306,62 +306,58 @@ Function Copy-Files {
   Used to copy one or more files.
  .Example
   ### 
-  Copy-Files -Path "C:\OrclOASIS\Source\*" -Destination "C:\OrclOASIS\Destination\" -StopOnError
-  Copy-Files -Path "C:\OrclOASIS\Source\TestFolder\" -Destination "C:\OrclOASIS\Destination\"
+  Copy-Files -Path "C:\MilkyWay\Source\*" -Destination "C:\MilkyWay\Destination\" -StopOnError
+  Copy-Files -Path "C:\MilkyWay\Source\TestFolder\" -Destination "C:\MilkyWay\Destination\"
  .Example
    ### 
-  Copy-Files -Path "C:\OrclOASIS\SourceFile.txt" -Destination "C:\OrclOASIS\Destination\"
-  Copy-Files -Path "C:\OrclOASIS\SourceFile.txt" -Destination "C:\OrclOASIS\Destination\DestinationFile.txt" -StopOnError
+  Copy-Files -Path "C:\MilkyWay\SourceFile.txt" -Destination "C:\MilkyWay\Destination\"
+  Copy-Files -Path "C:\MilkyWay\SourceFile.txt" -Destination "C:\MilkyWay\Destination\DestinationFile.txt" -StopOnError
 #>
-    [CmdletBinding()]
-    Param (
-        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
-        [ValidateNotNullorEmpty()]
+	[CmdletBinding()]
+	Param (
+		[Parameter(Mandatory = $true)]
+		[ValidateNotNullorEmpty()]
         # Mandatory. Source path.
-        [System.Collections.ArrayList]$Source,
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNullorEmpty()]
+		[string[]]$Path,
+		[Parameter(Mandatory = $true)]
+		[ValidateNotNullorEmpty()]
         # Mandatory. Destination path.
-        [string]$DestinationDir,
-        [Parameter(Mandatory = $false)]
-        [ValidateNotNullOrEmpty()]
+		[string]$Destination,
+        [Parameter(Mandatory=$false)]
+		[ValidateNotNullOrEmpty()]
         # Optional. If specified teh fucntion will stop when the first error is encountered.
-        [switch]$StopOnError
-    )
-    Begin {
-        [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
-        Write-Log -Message "Destination: $DestinationDir\$RepoName" -Caller $CmdletName
-    }
-    Process {
-        Try {
-            $Path = $_.FullName
-            $ChildStructure = $_.DirectoryName -replace ([regex]::Escape($RepoPath)), ''
-            $Destination = "$DestinationDir\$RepoName$ChildStructure"
-
-            If ((!([IO.Path]::HasExtension("$Destination\"))) -and (!(Test-Path -Path $Destination -PathType 'Container'))) {
-                Write-Log -Message "Destination folder does not exist, creating $Destination." -Caller ${CmdletName}
-                New-Item -Path $Destination -Type 'Directory' -Force -ErrorAction 'Stop' | Out-Null
-            }
+		[switch]$StopOnError
+	)
+	Begin {
+		[string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
+		Write-Log -Message "$Path $Destination" -Caller $CmdletName
+	}
+	Process {
+		Try {
+			If ((!([IO.Path]::HasExtension($Destination))) -and (!(Test-Path -Path $Destination -PathType 'Container'))) {
+				Write-Log -Message "Destination folder does not exist, creating destination folder $Destination." -Caller ${CmdletName}
+				New-Item -Path $Destination -Type 'Directory' -Force -ErrorAction 'Stop'
+			}
             If ($StopOnError) {
                 $null = Copy-Item -Path $Path -Destination $Destination -Force -Recurse -ErrorAction 'Stop'
             }
             Else {
                 $null = Copy-Item -Path $Path -Destination $Destination -Force -Recurse -ErrorAction 'SilentlyContinue' -ErrorVariable '+ErrorCopyFiles'
             }
-            Write-Log -Message "[$Path] copied to [$Destination]." -Caller ${CmdletName}
+			Write-Log -Message "Copy file(s) recursively in path [$Path] to destination [$Destination]." -Caller ${CmdletName}
             if ($ErrorCopyFiles) {
                 Write-Log -Message "ErrorRecordNumber = $($ErrorCopyFiles.Count)" -Caller $CmdletName
                 Write-Log -Message "The following errors were encontered while copy file(s) from [$Path] to [$Destination]"
-                Write-Error2 -ErrorRecord $ErrorCopyFiles
+                Write-Error -ErrorRecord $ErrorCopyFiles
             }
-            Copy-Item -Path $Path -Destination $Destination -Force -Recurse -ErrorAction 'Stop'
-        }
-        Catch {
-            Write-Log -Message "Failed to copy [$Path] to destination $Destination." -Caller ${CmdletName}
-            Write-Error2 -Pause
+			Copy-Item -Path $Path -Destination $Destination -Force -Recurse -ErrorAction 'Stop'
+		}
+		Catch {
+			Write-Log -Message "Failed to copy file(s) in path [$Path] to destination $Destination." -Caller ${CmdletName}
+            Write-Error
             Throw "Failed to copy file [$path]: $($_.Exception.Message)"
-        }
-    }
+		}
+	}
     End {
         # Write-Log "End" -Caller $CmdletName -Color Green
     }
@@ -372,7 +368,7 @@ Function Remove-Folder {
   Used to delete a folder.
  .Example
   ### 
-  Remove-Folder -Path "C:\OrclOASIS\Source"
+  Remove-Folder -Path "C:\MilkyWay\Source"
 #>
     [CmdletBinding()]
     Param (
@@ -413,9 +409,9 @@ Function Remove-File {
   Used to delete one or more files.
  .Example
   ### 
-  Remove-File -Path "C:\OrclOASIS\Source\FileToBeDeleted.txt"
-  Get-ChildItem -Path "c:\OrclOASIS\Source" -File | Remove-File
-  Get-ChildItem -Path "c:\OrclOASIS\Source" -File | Remove-File -StopOnError
+  Remove-File -Path "C:\MilkyWay\Source\FileToBeDeleted.txt"
+  Get-ChildItem -Path "c:\MilkyWay\Source" -File | Remove-File
+  Get-ChildItem -Path "c:\MilkyWay\Source" -File | Remove-File -StopOnError
 #>
     [CmdletBinding()]
     Param (

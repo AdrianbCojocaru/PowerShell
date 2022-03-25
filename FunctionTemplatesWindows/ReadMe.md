@@ -29,3 +29,6 @@ Used to delete one or more files.
 
 ### Write-Error2
 Used to dump errors to the log file. Parameters needed only for a collection.
+
+### Get-EasterEastern
+Outputs the Eastern Orthodox Easter date.  

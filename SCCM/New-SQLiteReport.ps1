@@ -5,7 +5,9 @@
   Creates a database containing the Client Check results from GPO, Intune & Cortex .
 
 .DESCRIPTION
-  Gather 'ClientCheck' script run status from various sources and create a PSSQLite report.
+  Sort & order data that is comming from multiple reporting platforms: Intune, Cortex & GPO.  
+  Laverages SQLite & the PSSQLite module to create history tables in a database.  
+  The results can be further exported into an Excel spread sheet. ImportExcel module required.
 
 .PARAMETER <Parameter_Name>
   None
@@ -15,6 +17,7 @@
 
 .OUTPUTS
   "$PSScriptRoot\Data\ClientStatus.db"
+  "$PSScriptRoot\Output\Results.xlsx"
 
 .NOTES
   Author:         Adrian
@@ -31,6 +34,7 @@
 
 [CmdletBinding()]
 Param (
+    # install required modules
     [switch]$IM
 )
 

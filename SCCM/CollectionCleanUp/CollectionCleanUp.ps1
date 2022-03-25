@@ -5,14 +5,15 @@
 
 .DESCRIPTION
   Place the collections names that you want removed in <ScriptPath>\Data\CollectionNamesToBeCleaned.txt - each name on a new line
-  The script will first look for and remove the relationships for each collection. Then it will delete the collection itself.
+  The script will first look for and remove the relationships for each collection from SQL DB. Then it will delete the collection itself.
+  SQL Data Base & Server access are required
 
   -Confirm switch will require you to confirm the removal if:
     - the collection is not empty
     - the collection has 5 or more relationships
 
 .PARAMETER Confirm
-  Will require you to confirm the removal if:
+  Will ask you to confirm the removal if:
     - the collection is not empty
     - the collection has 5 or more relationships
 

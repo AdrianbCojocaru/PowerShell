@@ -1,3 +1,27 @@
+<#
+
+.SYNOPSIS
+  SCCM script.  
+  Outputs a list of software and hardware Hard Blockers.
+
+.PARAMETER <Parameter_Name>
+  None
+
+.INPUTS
+  None
+
+.OUTPUTS
+  PSObject containing the Hard Block data.
+
+.NOTES
+  Author:         Adrian
+  Purpose/Change: Initial script development
+
+.EXAMPLE
+  No parameters required
+
+#>
+
 $FolertPath = 'c:\$windows.~bt\sources\panther'
 $OutputData = New-Object System.Collections.ArrayList
 $ExitCode = 0
