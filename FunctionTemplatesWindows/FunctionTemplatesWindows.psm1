@@ -458,6 +458,28 @@ Function Remove-File {
     }
     End {}
 }
+
+function Get-EasterEastern {
+    <#
+ .Example
+  Get-EasterEastern 2090
+#>
+    Param (
+        [Parameter(Mandatory = $true)]
+        [int]$Year
+    )
+    $a = $Year % 4
+    $b = $Year % 7
+    $c = $Year % 19
+    $d = ((19 * $c) + 15) % 30
+    $e1 = - $d
+    $e = ((2 * $a) + (4 * $b) + $e1 + 34) % 7
+    $month = [Math]::Floor(($d + $e + 114) / 31)
+    $day = (($d + $e + 114) % 31) + 1
+    $cal = New-Object -TypeName System.Globalization.JulianCalendar
+    New-Object -TypeName System.DateTime -ArgumentList $Year, $month, $day, $cal
+}
+
 Export-ModuleMember -Function Write-Log
 Export-ModuleMember -Function Write-Header
 Export-ModuleMember -Function Set-RegistryKey
@@ -466,3 +488,4 @@ Export-ModuleMember -Function Copy-Files
 Export-ModuleMember -Function Remove-Folder
 Export-ModuleMember -Function Remove-File
 Export-ModuleMember -Function Write-Error2
+Export-ModuleMember -Function Get-EasterEastern
