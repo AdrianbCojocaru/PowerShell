@@ -1,12 +1,4 @@
-<#
-.SYNOPSIS
-	This script contains the functions and logic engine for the Workspace ONE UEM API.
-.DESCRIPTION
-	The script should be called directly to dot-source the functions used in scripts that are handling Workspace ONE operations.
-.NOTES
-  Author:         Adrian
-  Purpose/Change: Initial script development
-#>
+
 #----------------------------------------------------- [Functions] ----------------------------------------------
 Function Write-Log {
     <#
@@ -154,6 +146,7 @@ Function Get-OGinfo {
             Write-Log "Sending request to $($params.Uri)" -Caller $CmdletName
             $OGinfo = Invoke-RestMethod @params -ErrorAction Stop
             Write-Log "Request returned $($OGinfo.TotalResults) result(s)." -Caller $CmdletName -Color Green
+            $OGinfo | Out-String -Stream | Write-Log -Caller $CmdletName
             $RegInfo = "OK;$($OGinfo.TotalResults)"
         }
         catch {
@@ -249,6 +242,7 @@ Function Get-EnrollmentUserInfo {
             Write-Log "Sending request to $Uri" -Caller $CmdletName
             $EnrollmentUserInfo = Invoke-RestMethod -Uri $Uri -Method 'Get' -Headers $Headers -ErrorAction Stop
             Write-Log "Request returned $($EnrollmentUserInfo.Total) result(s)." -Caller $CmdletName -Color Green
+            $EnrollmentUserInfo | Out-String -Stream | Write-Log -Caller $CmdletName
             $RegInfo = "OK;$($EnrollmentUserInfo.Total)"
         }
         catch {
@@ -285,7 +279,6 @@ Function Get-EnrollmentUserAttributes {
         [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
         [ValidateNotNullorEmpty()]
         [string]$uuid
-
     )
     Begin {
         [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
@@ -305,8 +298,9 @@ Function Get-EnrollmentUserAttributes {
         try {       
             Write-Log "Sending request to $Uri" -Caller $CmdletName
             $EnrollmentUserAttributes = Invoke-RestMethod -Uri $Uri -Method 'Get' -Headers $Headers -ErrorAction Stop
-            Write-Log "Request returned $($EnrollmentUserAttributes.Total) result(s)." -Caller $CmdletName -Color Green
-            $RegInfo = "OK;$($EnrollmentUserAttributes.Count)"
+            Write-Log "Request returned $($($EnrollmentUserAttributes.uuid).count) result(s)." -Caller $CmdletName -Color Green
+            $EnrollmentUserAttributes | Out-String -Stream | Write-Log -Caller $CmdletName
+            $RegInfo = "OK;$($($EnrollmentUserAttributes.uuid).Count)"
         }
         catch {
             $RegInfo = "Error"
@@ -476,8 +470,7 @@ Function Get-EnrollmentToken {
                   `"message_type`": 0,
                   `"tags`": [
                     {
-                      `"name`": `"$DeviceTag`",
-                      `"name`": SilentEnrollment
+                      `"name`": `"$DeviceTag`"
                     }
                   ]
                 }
@@ -486,6 +479,12 @@ Function Get-EnrollmentToken {
             Write-Log "Sending request to $Uri" -Caller $CmdletName
             $EnrollmentToken = Invoke-RestMethod -Uri $Uri -Method 'POST' -Headers $Headers -Body $Body -ErrorAction Stop
             Write-Log "Request returned $($EnrollmentToken.token.Count) result(s)." -Caller $CmdletName -Color Green
+            # sometimes the api does not return anything even if the token is generated... depending on the OG
+            if ($($EnrollmentToken.token.Count) -eq 0) {
+                Write-Log "Request returned no error but also $($EnrollmentToken.token.Count) tokens. Stopping" -Caller $CmdletName -Color Green
+                throw "Request returned no token."
+            }
+            $EnrollmentToken | Out-String -Stream | Write-Log -Caller $CmdletName
             $RegInfo = "OK;$($EnrollmentToken.token.Count)"
         }
         catch {
@@ -503,6 +502,7 @@ Function Get-EnrollmentToken {
         $EnrollmentToken
     }
 }
+
 Function Get-InstalledApplication {
     <#
 .SYNOPSIS
@@ -618,6 +618,7 @@ Function Get-InstalledApplication {
         }
     }
     End {
+        $installedApplication | Out-String -Stream | Write-Log -Caller $CmdletName
         Write-Output -InputObject $installedApplication
     }
 }
@@ -716,6 +717,7 @@ Function Get-EnrollmentStatus {
 .SYNOPSIS
     Keeps checking for the 'Status' registry under "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus" for xx seconds [int] or until the value changes to 'Completed'
     Returns TRUE if Status is Completed, FALSE otherwise.
+    Logs values for thee following registries: Status, CurrentStep, LastError
 .PARAMETER Seconds
    Required. Number of secons to check for registry Status = Completed under HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus
    Default = 120
@@ -736,30 +738,31 @@ Function Get-EnrollmentStatus {
     }
     End {
         ## Skip balloon if in silent mode, disabled in the config or presentation is detected
-        Write-Log -Message "Checking registry $Type." -Caller ${CmdletName}
+        Write-Log -Message "Checking HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus for $Seconds seconds." -Caller ${CmdletName}
         try {
             foreach ($fiveseconds in (1..$Seconds)) {
                 Start-Sleep -Seconds 5
                 if (Test-Path -Path "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus") {
-                    $Status = Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus" -Name "Status" -ErrorAction SilentlyContinue
-                    if ($Status -eq 'Completed') {
+                    $Regs = (Get-Itemproperty -Path 'HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus' -ErrorAction Ignore)
+                    Write-Log "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus | Status = $($Regs.Status) | CurrentStep = $($Regs.CurrentStep)" -Caller $CmdletName
+                    if ($Regs.Status -eq 'Completed') {
                         $EnrollmentCompleted = $true
                         $StatusRegValue = 'OK'
-                        Write-Log "Request retruned EnrollmentStatus = Completed" -Caller $CmdletName  -Color Green
+                        Write-Log "Request retruned EnrollmentStatus = Completed. Exiting the loop." -Caller $CmdletName  -Color Green
                         break
                     }
-                    else {
-                        $ErrorActionPreference = "SilentlyContinue"
-                        $CurrentStep = Get-ItemPropertyValue -Path "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus" -Name "CurrentStep"
-                        $ErrorActionPreference = "Continue"
+                    elseif ($Regs.Status -eq 'Failed') {
+                        Write-Log "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus | LastError = $($Regs.LastError)" -Caller $CmdletName
                     }
-                    Write-Log "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus | Status = $Status | CurrentStep = $CurrentStep" -Caller $CmdletName
+                }
+                else {
+                    Write-Log "HKLM:\SOFTWARE\AIRWATCH\EnrollmentStatus does not exist" -Caller $CmdletName
                 }
             }
         }
         finally {
-            Write-Log "Returns $EnrollmentCompleted"  -Caller $CmdletName
-            $RegInfo = if ($EnrollmentCompleted) { $StatusRegValue } else { "$Status;$CurrentStep" }
+            Write-Log "Returns $EnrollmentCompleted" -Caller $CmdletName
+            $RegInfo = if ($EnrollmentCompleted) { "OK;$StatusRegValue" } else { "$($Regs.Status);$($Regs.CurrentStep);$($Regs.LastError)" }
             Set-RegistryKey -Key "HKLM:SOFTWARE\Oracle\WSONE" -Name "$CmdletName$Type" -Value $RegInfo -Type "String"
         }
         return $EnrollmentCompleted
