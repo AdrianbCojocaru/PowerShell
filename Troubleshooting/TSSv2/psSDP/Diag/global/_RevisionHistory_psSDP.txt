@@ -1,0 +1,6 @@
+**psSDP Revision History**  - *ReleaseNotes* -Changes/Improvements since last version
+
+::   2022.10.24.0 [we] [psSDP]: upd Get-CimInstance for Win11 22H2
+::   2022.10.19.0 [we] [psSDP]: DFSsrv Evt-logs/reg.keys, DC_RPC-Component, DC_HotfixRollups
+::   2022.10.17.0 [we] [psSDP]: add Keys "HKLM\Software\Policies\Microsoft\Windows NT\Rpc"
+::   2022.10.04.0 [we] [psSDP]: Added DsRegCmd /status output to -SDP Net
