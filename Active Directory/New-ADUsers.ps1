@@ -4,6 +4,8 @@
 
 .GUID 31abe8bd-bf88-4723-981d-57075585332d
 
+.Date 03-Dec-2022
+
 .AUTHOR adrianbcojocaru@gmail.com
 
 #>
@@ -426,4 +428,3 @@ catch {
 finally {
     Write-Log -Message "============ [Script ended. Exit code: $Global:ExitCode] ============" -Caller 'Finally'
 }
-

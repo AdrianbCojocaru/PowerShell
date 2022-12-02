@@ -4,6 +4,8 @@
 
 .GUID e0b23673-e266-4f42-9a93-c056f092232d
 
+.Date 01-Dec-2022
+
 .AUTHOR adrianbcojocaru@gmail.com
 
 #>
@@ -532,9 +534,3 @@ catch {
 finally {
     Write-Log -Message "============ [Script ended. Exit code: $Global:ExitCode] ============" -Caller 'Finally'
 }
-
-
-# function check-csv; header, null givenname/surname - handle null role in script?
-# $csvContent = Import-Csv -Path "$CSVPath" -Header @("Date","HostName", "InfoType","IPAddress","Subnet")
-# https://stackoverflow.com/questions/53231838/check-csv-for-blank-fields-and-write-output-if-exist-blank
-# https://stackoverflow.com/questions/37996293/finding-duplicate-lines-in-a-csv-file
