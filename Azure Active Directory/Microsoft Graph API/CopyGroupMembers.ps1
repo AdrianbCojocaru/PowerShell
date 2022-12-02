@@ -1,17 +1,30 @@
 
 #Region ===============================[Metadata]==============================
-# !WARNING! An empty line is required between metadata elements.
-# To check if metadata is correctly configured, use Test-ScriptFileInfo -Path <path_to_script>
+<#PSScriptInfo
+
+.VERSION 1.0
+
+.GUID 31abe8bd-bf88-4723-981d-57075585332d
+
+.Date 15-Nov-2022
+
+.AUTHOR adrianbcojocaru@gmail.com
+
+#>
 
 <#
 
 .SYNOPSIS
-  Copy all members (direct & transitive) of a group to another group in AAD
+  As per today, Azure AD Group Writeback does not support writeback of nested group members from on-prem AD.
+  This script will copy all members (direct & transitive) of a group to another group in Azure Active Directory.
 
 .DESCRIPTION
-  Copy all members of a group (SourceGroupId/SourceGroupName) to another group (DestinationGroupId/DestinationGroupName)
-  If the destination group does not exists it will be created - only when you specify DestinationGroupName
-  By default the newly created Group will be a security group. This can be changed with the GroupType parameter
+  Copy all members of a group (SourceGroupId/SourceGroupName) to another group (DestinationGroupId/DestinationGroupName).
+  If the destination group does not exists it will be created - only when you specify DestinationGroupName.
+  By default the newly created Group will be a security group. This can be changed with the GroupType parameter.
+
+.OUTPUTS
+  A log file will be created under the Logs folder next to the script.
 
 .PARAMETER <Parameter_Name>
   SourceGroupId [string] [optional]
@@ -20,28 +33,25 @@
   DestinationGroupName [string] [optional]
   GroupType [string] [optional]
 
-.NOTES
-  Author:         Adrian Cojocaru
-  Creation Date:  15-Nov-2022
-  Purpose/Change: Initial script development
+.EXAMPLE
+  ### destination group already exists:
+  CopyGroupMembers.ps1 -SourceGroupId '9xxxxx9-8294-43ff-958e-450ee4d039e1' -DestinationGroupId '2xxxxx2-c4e8-4e64-8629-450ee4d039e1'
 
 .EXAMPLE
-  ### destination group already exists
-  CopyGroupMembers.ps1 -SourceGroupId '9xxxxx9-8294-43ff-958e-450ee4d039e1' -DestinationGroupId '2xxxxx2-c4e8-4e64-8629-450ee4d039e1'
-  ### destination group does not exists
+  ### Copy membership and create the destination group if it does not exists:
   CopyGroupMembers.ps1 -SourceGroupId '9xxxxx9-8294-43ff-958e-450ee4d039e1' -DestinationGroupName 'ACTestGroup3'
   CopyGroupMembers.ps1 -SourceGroupId '9xxxxx9-8294-43ff-958e-450ee4d039e1' -DestinationGroupName 'ACTestGroup3' -GroupType 'Microsoft365'
+
 #>
 
 #EndRegion ============================[Metadata]==============================
 
 #Region ===============================[Parameters]============================
 
-# https://4sysops.com/archives/powershell-advanced-functions-the-cmdletbinding-and-parameter-attribute/
+#   [Parameter(Mandatory = $false)]    
+#   [switch]$CreateGroup = $true,
 [CmdletBinding()]
 Param (
-    #   [Parameter(Mandatory = $false)]    
-    #   [switch]$CreateGroup = $true,
     [Parameter(Mandatory = $false)]
     [string]$SourceGroupId = '',
     [Parameter(Mandatory = $false)]
@@ -94,7 +104,7 @@ $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
 [array]$Global:Output = @()
 # Define an array of external module names that need to be loaded for this script.
 # Leave it empty if no external modules are required.
-# [array]$RequiredModules = @('Microsoft.Graph', 'ImportExcel')
+[array]$RequiredModules = @('Microsoft.Graph', 'ImportExcel')
 #EndRegion === Template generic variables ===
 
 # =================================
@@ -103,8 +113,8 @@ $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
 
 
 #EndRegion ============================[Variables]=============================
-$ClientID = '623c202e-534e-4d47-a794-226816dcce6c'
-$TenantID = '76a2ae5a-9f00-4f6b-95ed-5d33d77c4d61'
+$ClientID = 'c2164bc4-563d-4016-b1be-3247e31a6c3f'
+$TenantID = '3162431e-45a1-4b12-9845-2719fc9a0fc7'
 #Region ===============================[Functions]=============================
 
 
