@@ -1,7 +1,7 @@
 #requires -version 3
 <#PSScriptInfo
 
-.VERSION 1.0
+.VERSION 1.1
 
 .GUID 2925334f-e35c-4872-93d9-e4515620fa44
 
@@ -389,6 +389,7 @@ Function Update-ProgressBar {
 }
 
 # .Net methods for hiding/showing the console in the background
+If (-not (Test-Path -Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
 Add-Type -Name Window -Namespace Console -MemberDefinition '
 [DllImport("Kernel32.dll")]
 public static extern IntPtr GetConsoleWindow();
