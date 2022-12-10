@@ -16,6 +16,7 @@
   Attempts to repair most common Windows Updates errors
 
 .DESCRIPTION
+  Intended for devices that have troubles upgrading to 21H2
   Restart services: Windows Update, BITS, Application Identity, Cryptographic Services
   Reset security descriptors to default for Windows Update & BITS
   Re-register Windows Update-related COMs
