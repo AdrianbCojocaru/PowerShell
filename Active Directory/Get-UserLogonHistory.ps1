@@ -570,7 +570,7 @@ begin {
             $NewCSVDestinationPath = If ($CSVDestinationPath) { $CSVDestinationPath } else { "$OutputFolder\$LogFileName-$_-$FileNameTimestamp.csv" }
             Write-Log "New CSVDestinationPath = $NewCSVDestinationPath" -Caller 'New-CSVDestinationPath'
             $_ | Get-UserActivity | Get-UserInfo |`
-                Select-Object -Property ComputerName, Username, GivenName, Surname, StartTime, StopTime, 'Session Active (Days)', 'Session Active (Min)', Groups, OrganizationalUnits |`
+                Select-Object -Property ComputerName, Username, StartTime, StartAction, StopTime, StopAction, 'Session Active (Days)', 'Session Active (Min)' |`
                 Export-Csv $NewCSVDestinationPath -NoTypeInformation -Append
         }
         catch {
