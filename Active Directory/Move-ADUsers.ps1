@@ -2,9 +2,9 @@
 
 .VERSION 1.0
 
-.GUID 31abe8bd-bf88-4723-981d-57075585332d
+.GUID e0b23673-e266-4f42-9a93-c056f092232d
 
-.Date 01-Dec-2022
+.Date 03-Dec-2022
 
 .AUTHOR adrianbcojocaru@gmail.com
 
@@ -14,36 +14,51 @@
 
 <#
   .SYNOPSIS
-  Creates Active Directory users based on a CSV file.
+  Moves Active Directory users to an OU & group.
 
   .DESCRIPTION
-  CSV Header format: GivenName | Surname | Role
-  'GivenName' and 'Surname' columns cannot have empty values.
-  If a user already exists, it will be skipped.
+  Moves all Active Directory users defined by [GivenName] & [Surname] inside the input CSV file to an OU & Security Group specified by the [Role] column.
+  The OUs and Security Groups will be created if they don't exist.
 
   .PARAMETER CSVPath
   [string] Specifies the path to the CSV input file.
 
-  .PARAMETER Password
-  [string] User's Password. Default value: AtosP@ssw0rd
-
   .PARAMETER RSAT
-  [switch] Used to install the Remote Server Administration Tools. Internet connection required.
+  [switch] Used to install the Remote Server Administration Tools
+
+  .PARAMETER OUPath
+  [string] Path for the Organizational Unit
+
+  .PARAMETER GroupPath
+  [string] Path to the Security Group
 
   .OUTPUTS
   A log file will be created under the Logs folder next to the script.
-  A CSV file containg the users creation status will be generated under the Output folder next to the script.
+  A CSV file containg the operation result will be generated under the Output folder next to the script.
 
   .EXAMPLE
-  .\New-ADUsers.ps1 -CSVPath ".\users.csv"
+  .\Move-ADUsers.ps1 -CSVPath .\users.csv
+  Default: Creates the OU at the top domain level & the Security Group under 'Users' container.
+  They will be named according to the 'Role' column values.
+
+  .EXAMPLE
+  .\Move-ADUsers.ps1 -CSVPath .\users.csv -OUPath 'OU=Test,DC=CORP,DC=CONTOSO,DC=COM' -GroupPath 'OU=Test,DC=CORP,DC=CONTOSO,DC=COM'
+  The Organizational Unit and Security Group are created under the paths specified by the '-OUPath' & '-GroupPath' parameters.
+  (the Path, excluding the Name)
+  They will be named according to the 'Role' column values.
 
 #>
+
 [CmdletBinding()]
 Param (
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $false)]
     [string]$CSVPath = '',
     [Parameter(Mandatory = $false)]
-    [switch]$RSAT
+    [switch]$RSAT,
+    [Parameter(Mandatory = $false)]
+    [string]$OUPath,
+    [Parameter(Mandatory = $false)]
+    [string]$GroupPath
 )
 
 #Region ===============================[Variables]=============================
@@ -70,7 +85,6 @@ $ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop
 [string]$RequiredModule = 'ActiveDirectory'
 # Define the global exit code for troubleshooting.
 [int32]$Global:ExitCode = 0
-
 #EndRegion ============================[Variables]=============================
 
 #Region ===============================[Functions]=============================
@@ -134,6 +148,7 @@ Function Write-Log {
     }
     End {}
 }
+
 function Write-Error2 {
     <#
      .Synopsis
@@ -242,6 +257,98 @@ function Set-ADPrerequisites {
         }
     }
 }
+function New-ADResource {
+    <#
+ .Synopsis
+  Used to create OUs or SecurityGroups if they don't already exist.
+
+ .INPUTS
+  Accepts an array as pipeline input containing the OU/Group names.
+  OUs and SecurityGroups will be created under $ResourcePath
+  OUs and SecurityGroups will have the same name as the current element of the array.
+
+ .OUTPUTS
+  Returns an array of created & existing OUs or SecurityGroups.
+
+ .Example
+   [string[]]$names | New-ADResource -Type 'OU' -ResourcePath $OUPath 
+   [string[]]$names | New-ADResource -Type 'SecurityGroup' -ResourcePath $SecurityGroupPath
+
+#>
+    Param (
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNull()]
+        [string[]]$Names,
+        [Parameter(Mandatory = $true, Position = 1)]
+        [ValidateSet('OU', 'SecurityGroup')]
+        [string]$Type,
+        [Parameter(Mandatory = $false, Position = 2)]
+        [string]$ResourcePath
+    )
+    
+    begin {
+        [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
+        # Holds SecurityGroups that were created
+        [System.Collections.ArrayList]$ResourceList = New-Object System.Collections.ArrayList($null)
+    }
+    process {
+        # Construct OUs & SecurityGroups parameters
+        Write-Log "ResourcePath = '$ResourcePath' Name = '$_' Type '$Type'" -Caller $CmdletName
+        if ($Type -eq 'SecurityGroup') {
+            $Parameters = @{
+                Name           = $_
+                SamAccountName = $_
+                GroupCategory  = 'Security'
+                DisplayName    = $_
+                GroupScope     = 'Global'
+                Path           = if ($ResourcePath) { $ResourcePath } else { 'CN=Users,DC=' + $env:userdnsdomain.Replace('.', ',DC=') }
+                ErrorAction    = 'Stop'
+            }
+            $LoggingName = "CN="
+        }
+        else {
+            # OU
+            $Parameters = @{
+                Name                            = $_
+                Path                            = if ($ResourcePath) { $ResourcePath } else { 'DC=' + $env:userdnsdomain.Replace('.', ',DC=') }
+                ProtectedFromAccidentalDeletion = $false
+                ErrorAction                     = 'Stop'
+            }
+            $LoggingName = "OU="
+            
+        }
+        # Try creating the resource & handle already exists exception types
+        try {
+            $Parameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-Log -Caller $CmdletName }
+            if ($Type -eq 'OU') { New-ADOrganizationalUnit @Parameters } else { New-ADGroup @Parameters }
+            Write-Log "${LoggingName}$($Parameters.Name),$($Parameters.Path) successfully created." -Color 'Green' -Caller $CmdletName
+        }
+        catch [Microsoft.ActiveDirectory.Management.ADException] {
+            Switch ($_.Exception.Message) {
+                # Check if Security Group/OU already exists
+                "The specified group already exists" {
+                    Write-Log "${LoggingName}$($Parameters.Name),$($Parameters.Path) group already exists." -Color 'Yellow' -Caller $CmdletName
+                }
+                "An attempt was made to add an object to the directory with a name that is already in use" {
+                    Write-Log "${LoggingName}$($Parameters.Name),$($Parameters.Path) An attempt was made to add an object to the directory with a name that is already in use." -Color 'Yellow' -Caller $CmdletName
+                }
+                default {
+                    $Global:ExitCode = 102
+                    Write-Log "Error creating $Type. ${LoggingName}$($SecurityGroupParameters.Name)" -Color 'Red' -Caller $CmdletName
+                    Write-Error2
+                    Exit $Global:ExitCode
+                }
+            }
+        }
+        finally {
+            $ResourceList.Add($Parameters.Name) | Out-Null
+            #$ResourceList.Add("${LoggingName}$($Parameters.Name),$($Parameters.Path)") | Out-Null
+        }
+    }
+    end {
+        return $ResourceList
+    }
+}
 function Confirm-CSV {
     <#
      .Synopsis
@@ -287,125 +394,111 @@ function Confirm-CSV {
         return $csv
     }
 }
-
-function Add-ADUser {
+function Set-ADUser {
     <#
-
  .Synopsis
-  Used to Create a new Active Directory user if it doesn't already exists.
+  Used to move a user to an OU or add it to a group if not already there.
 
  .INPUTS
-  Accepts a [ArrayList] as pipeline input.
-  Each [PSCustomObject] needs to have GivenName and Surname properties representing the user.
+  Accepts an array of objects as pipeline input containing User GivenName & Surname properties.
+  DestinationOUPath - string
+  DestinationGroupName - string
 
  .OUTPUTS
-  Returns the same [ArrayList] plus the 'Result' property.
-  Result = Added - the user was created in AD
-  Result = Skipped - the user already exists in AD
+  Returns the input array + existing OU & Groups properties.
 
  .Example
-   [ArrayList]$Users | Add-ADUser
+   [string[]]$names | Set-ADUser -DestinationOUPath "OUToBeMovedIn" -DestinationGroupName "GroupToBeMovedIn"
+   [string[]]$names | Set-ADUser -DestinationGroupName "GroupToBeMovedIn"
 
 #>
     Param (
         [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
         [ValidateNotNull()]
-        # Mandatory. Specifies the message string.
-        [PSCustomObject[]]$Users
+        [string[]]$Names,
+        [Parameter(Mandatory = $false, Position = 1)]
+        [ValidateNotNull()]
+        [string]$DestinationGroupName,
+        [Parameter(Mandatory = $false, Position = 2)]
+        [ValidateNotNull()]
+        [string]$DestinationOUName,
+        [Parameter(Mandatory = $false, Position = 3)]
+        [string]$DestinationOUPath
     )
     
     begin {
         [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
-        # Define the list that holds the New-ADUser operation status <Added> <AlreadyExists> <IncompleteData>
-        [System.Collections.ArrayList]$Users_status = New-Object System.Collections.ArrayList($null)
-        # Define function result for each input object
-        [string]$Result = 'N/A'
+        # Holds reporting that were created
+        [System.Collections.ArrayList]$ResourceList = New-Object System.Collections.ArrayList($null)
     }
     process {
-        Write-Log "GivenName = '$($_.GivenName)' Surname = '$($_.Surname)'" -Caller $CmdletName
-        # check for empty values
-        if (($_.GivenName) -and ($_.Surname)) {
-            # parameters for New-ADUser
-            $NewADUserParameters = @{
-                Name                  = "$($_.GivenName).$($_.Surname)"
-                GivenName             = $_.GivenName
-                Surname               = $_.Surname
-                #AccountPassword       = ConvertTo-SecureString $Password -AsPlainText -Force
-                AccountPassword       = $Password
-                Enabled               = $true
-                ChangePasswordAtLogon = $True
-            }
-            try {
-                $NewADUserParameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-Log -Caller $CmdletName }
-                New-ADUser @NewADUserParameters
-                Write-Log "User '$($NewADUserParameters.Name)' successfully created." -Color 'Green' -Caller $CmdletName
-                $Result = 'Added'
-            }
-            # AD server not found terminating error
-            catch [Microsoft.ActiveDirectory.Management.ADServerDownException] {
-                $Global:ExitCode = 101
-                $Result = 'ADServerDown'
-                Write-Error2
-                Exit  $Global:ExitCode
-            }
-            # Password Complexity terminating error
-            catch [Microsoft.ActiveDirectory.Management.ADPasswordComplexityException] {
-                Switch ($_.Exception.Message) {
-                    "The password does not meet the length, complexity, or history requirement of the domain." {
-                        $Global:ExitCode = 102
-                        Write-Error2
-                        $Result = 'PasswordRequirements'
-                        Exit $Global:ExitCode
-                    }
-                    "The specified account already exists" {
-                        Write-Log "User '$($NewADUserParameters.Name)' already exists.." -Color "Yellow" -Caller $CmdletName
-                        $Result = 'AlreadyExists.'
-                    }
-                    default {
-                        $Global:ExitCode = 103
-                        Write-Log 'Other' -Caller $CmdletName
-                        Write-Log $_.Exception.Message -Color 'Red' -Caller $CmdletName
-                    }
+        # Construct OUs & SecurityGroups parameters
+        if (-not ($DestinationGroupName)) { $DGN = $_.Role }
+        if (-not ($DestinationOUName)) { $DOUN = $_.Role }
+        Write-Log "GivenName = '$($_.GivenName)' Surname = '$($_.Surname)' Role = '$($_.Role)' DestinationGroupName = '$DGN'"  -Caller $CmdletName
+        Write-Log "DestinationOUPath = '$DestinationOUPath' DestinationOUName = '$DOUN'" -Caller $CmdletName
+        # Add data for reporting - Group & OU columns
+        try {
+            # Get user info
+            #$CurrentUser = Get-ADUser -Filter "Surname -eq '$($_.Surname)'"
+            $CurrentUser = Get-ADUser -Filter "GivenName -eq '$($_.GivenName)' -and Surname -eq '$($_.Surname)'"
+            # Go ahead only if we find exactly 1 user
+            if ($CurrentUser) {
+                $UserCount = $CurrentUser.count
+                if ($UserCount -ne 1) {
+                    Write-Log "$UserCount users found that match the criteria" -Color 'DarkMagenta' -BackgroundColor 'Yellow' -Caller $CmdletName
+                    $CurrentUser.DistinguishedName | Write-Log -Color 'DarkMagenta' -BackgroundColor 'Yellow' -Caller $CmdletName
+                    $_ | Add-Member -MemberType NoteProperty -Name 'OrganizationalUnit' -Value 'MultiUserFound'
+                    $_ | Add-Member -MemberType NoteProperty -Name 'SecurityGroup' -Value 'MultiUserFound'
+                }
+                else {
+                    # Get destination group info
+                    $Group = Get-ADGroup -Identity $DGN
+                    # Add user to group
+                    Add-ADGroupMember -Identity $Group -Members $CurrentUser
+                    Write-Log "Added user '$($CurrentUser.DistinguishedName)' to Group '$($Group.DistinguishedName)'." -Color 'Green' -Caller $CmdletName
+                    $_ | Add-Member -MemberType NoteProperty -Name 'OrganizationalUnit' -Value $DGN
+                    # Add user to OU
+                    # Multiple OUs can have the same name - make sure we get the correct one
+                    if (-not($DestinationOUPath)) { $DestinationOUPath = 'DC=' + $env:userdnsdomain.Replace('.', ',DC=') }
+                    Write-Log "Target OU 'OU=$DOUN,$DestinationOUPath'." -Caller $CmdletName
+                    # move user to OU
+                    Move-ADObject -Identity $CurrentUser -TargetPath "OU=$DOUN,$DestinationOUPath"
+                    Write-Log "Moved user '$($CurrentUser.DistinguishedName)' to Organizational Unit 'OU=$DOUN,$DestinationOUPath'." -Color 'Green' -Caller $CmdletName
+                    $_ | Add-Member -MemberType NoteProperty -Name 'SecurityGroup' -Value $DOUN
                 }
             }
-            # Account already exists warning
-            catch [Microsoft.ActiveDirectory.Management.ADIdentityAlreadyExistsException] {
-                Write-Log "User '$($NewADUserParameters.Name)' already exists." -Color "Yellow" -Caller $CmdletName
-                $Result = 'AlreadyExists'
-            }
-            # Other non-terminating errors
-            catch [Microsoft.ActiveDirectory.Management.ADException] {
-                $Global:ExitCode = 300
-                Write-Log "Error creating user $($NewADUserParameters.Name):" -Color 'Red' -Caller $CmdletName
-                $Result = 'OtherError'
-                Write-Error2
-            }
-            finally {
-                $_ | Add-Member -MemberType NoteProperty -Name 'Result' -Value $Result
-                $Users_status.Add($_) | Out-Null
+            else {
+                $_ | Add-Member -MemberType NoteProperty -Name 'OrganizationalUnit' -Value 'NoUserFound'
+                $_ | Add-Member -MemberType NoteProperty -Name 'SecurityGroup' -Value 'NoUserFound'
+                Write-Log "No user found that matches the above criteria" -Color 'Yellow' -Caller $CmdletName
             }
         }
-        else {
-            Write-Log "$($_.GivenName).$($_.Surname) user data incomplete." -Color "DarkGray" -Caller $CmdletName
-            $_ | Add-Member -MemberType NoteProperty -Name 'Result' -Value 'IncompleteData'
-            $Users_status.Add($_) | Out-Null
+        catch {
+            $_ | Add-Member -MemberType NoteProperty -Name 'OrganizationalUnit' -Value 'Error'
+            $_ | Add-Member -MemberType NoteProperty -Name 'SecurityGroup' -Value 'Error'
+            Write-Log "Error setting user '$($CurrentUser.DistinguishedName)'" -Color 'Red' -Caller $CmdletName
+            Write-Error2
+        }
+        finally {
+            $ResourceList.Add($_) | Out-Null
         }
     }
     end {
-        return $Users_status
+        return $ResourceList
     }
 }
+
 #EndRegion ============================[Functions]=============================
 
 try {
     # Create Log & Output folders
     If (-not (Test-Path -Path $LogFolder)) { New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null }
     If (-not (Test-Path -Path $OutputFolder)) { New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null }
-    Write-Log "=====================================================" -Color 'Yellow' -Caller 'PasswordPrompt'
-    Write-Log "Please provide a password for the newly created users" -Color 'Yellow' -Caller 'PasswordPrompt'
-    Write-Log "=====================================================" -Color 'Yellow' -Caller 'PasswordPrompt'
-    $Password = Read-Host -AsSecureString "AccountPassword"
     Write-Log "CSVPath = $CSVPath | RSAT = $RSAT" -Caller 'Parameters'
+    Write-Log "OUPath = $OUPath | GroupPath = $GroupPath" -Caller 'Parameters'
+    # OU Path and Group Path cannot be the same
+    if (($OUPath) -and ($OUPath -eq $GroupPath)) { throw 'JumpToCatchBlock' }
 
     # Check Active Directory module
     if (Get-Module $RequiredModule) {
@@ -418,12 +511,25 @@ try {
     # Validate CSV
     $CSVUsers = Confirm-CSV -Path $CSVPath
     #$CSVName = (Get-Item $CSVPath).BaseName
-
-    # Pipe the object collection to Add-ADUser and export the output (Result 'Added' or 'Skipped') to -results- csv
-    $CSVUsers | Add-ADUser | Export-Csv "$OutputFolder\$ScriptName-results-$FileNameTimestamp.csv" -NoTypeInformation
+    # Get OU/SecurityGroup names
+    $Containers = $CSVUsers | Select-Object -Property 'Role' -Unique
+    # Create OUs & Security Groups
+    ($Containers).Role | New-ADResource -Type 'OU' -ResourcePath $OUPath | New-ADResource -Type 'SecurityGroup' -ResourcePath $GroupPath
+    
+    # Move Users to the OU & Security Group defined by the Role header and export the reults
+    #$CSVUsers | Move-ADUser | Export-Csv "$OutputFolder\$CSVName-results-$FileNameTimestamp.csv" -NoTypeInformation
+    #  if (-not($OUPath)) { $Path = 'DC=' + $env:userdnsdomain.Replace('.', ',DC=') } else {}
+    $CSVUsers | Set-ADUser -DestinationOUPath $OUPath | Export-Csv "$OutputFolder\$ScriptName-results-$FileNameTimestamp.csv" -NoTypeInformation
 }
 catch {
-    Write-Error2
+    if ($_.Exception.Message -eq 'JumpToCatchBlock') {
+        Write-Log 'OU Path and Group Path cannot be the same!' -Color 'Red' -Caller 'Pre-Check'
+        $Global:ExitCode = 200 
+    }
+    else {
+        Write-Error2
+        $Global:ExitCode = 101
+    }
 }
 finally {
     Write-Log -Message "============ [Script ended. Exit code: $Global:ExitCode] ============" -Caller 'Finally'
