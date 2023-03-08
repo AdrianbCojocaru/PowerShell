@@ -13,7 +13,7 @@
 
 <#
   .SYNOPSIS
-  Adds Windows devices from on or moure AAD user groups to a single AAD device group.
+  Adds Windows devices from on or moure AAD user groups to a single AAD security group.
 
   .DESCRIPTION
   Gets the users from each User group ID defined in $AADUserGroupIDs

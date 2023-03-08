@@ -1,3 +1,27 @@
+<#PSScriptInfo
+
+.VERSION 1.0
+
+.GUID 876e34d6-4b94-4204-9f32-730d8b6871a1
+
+.AUTHOR adrianbcojocaru@gmail.com
+
+#>
+
+#Requires -Modules AzureAD
+
+<#
+  .SYNOPSIS
+  Adds a list of devices to an AAAD security group.
+
+  .DESCRIPTION
+
+  .EXAMPLE
+  .\Add-DevicesToGroup.ps1
+
+#>
+
+
 $FilePath = "$PSScriptRoot\MyList.txt"
 $TimeStamp = get-date -Format yyyyMMddTHHmmss
 $LogPath = "$PSScriptRoot\$TimeStamp.log"
