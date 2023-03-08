@@ -110,7 +110,7 @@ function Write-Error2 {
 
 # Install-Module AzureAD
 Connect-AzureAD
-$destinationGroup = Get-AzureADGroup -SearchString 'AAD Global CP Intune CloudAuth Cert QA Devices'
+$destinationGroup = Get-AzureADGroup -SearchString 'Group Name'
 
 Get-Content $FilePath | ForEach-Object {
     try {
