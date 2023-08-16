@@ -1,47 +1,22 @@
-<#
-  .SYNOPSIS
-  Used to update the members of an AzureAD based on a Microsoft365 Defender advanced hunting query
-  .DESCRIPTION
-  A json file contains the AAD group id + the defender query
-  The scrip reads this file and updates the AzureAD group membership with the results from the query
-  Safeguards to be put in place
-  .PARAMETER ConfigFile
-  Design to be executed in a runbook. Params are subject to change
-  
-  .OUTPUTS
-  A log file will be created under the Logs-ScriptName folder next to the script.
-  .EXAMPLE
-  .\Add-AadDevicesFromCSV.ps1 -CSVPath "C:\Git\Proactive remediations\Git_AdvancedHuntingResults-SoftwareEidence_plus_AAD_DeviceId.csv" -AadGroupObjectId 'aa0116f4-d2d9-4191-8348-686ea15d085b' -ColumnName_AzureADDeviceId 'AadDeviceId'
-
-#>
-#Region----------------------------------------------------- [Script Parameters] -------------------------------------------------------
-[CmdletBinding()]
-Param (
-    # Mandatory
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigFile = ''
+Param
+(
+    [Parameter (Mandatory = $false)]
+    [string]$tenantId = $env:STFNmemTenantId,
+    [Parameter (Mandatory = $false)]
+    [string]$clientId = $env:STFNmemDefenderAppClientId,
+    [Parameter (Mandatory = $false)]
+    [string]$appSecret = $env:STFNmemDefenderAppSecret
 )
-#EndRegion------------------------------------------------------ [Script Parameters] -------------------------------------------------------
-
-#Region----------------------------------------------------- [Script Variables] ----------------------------------------------
-[int32]$Global:ExitCode = 0
-$GLOBAL:VerbosePreference="Continue"
-[string]$TimeStamp = get-date -Format yyyyMMddTHHmmss
-#[string]$ScriptName = (Get-Item $PSCommandPath).Basename
-#[string]$ScriptName = 'TestName'
-#[string]$LogName = $ScriptName
-#[string]$LogFolder = "$PSScriptRoot\Logs-$ScriptName"
-#[string]$OutputFolder = "$PSScriptRoot\Output-$ScriptName"
-#[string]$LogPath = "$LogFolder\$LogName-$TimeStamp.log"
-#EndRegion ----------------------------------------------------- [Script Variables] ----------------------------------------------
-
-##Region ----------------------------------------------------- [AzureAD Variables] ----------------------------------------------
-[string]$tenantId = ''
-[string]$clientId = ''
-[string]$appSecret = ''
+#Region ----------------------------------------------------- [AzureAD Variables] ----------------------------------------------
+if ([string]::IsNullOrEmpty($tenantId)) { [string]$tenantId = Get-AutomationVariable -Name "STFNmemTenantId" }
+if ([string]::IsNullOrEmpty($clientId)) { [string]$clientId = Get-AutomationVariable -Name "STFNmemDefenderAppClientId" }
+if ([string]::IsNullOrEmpty($appSecret)) { [string]$appSecret = Get-AutomationVariable -Name "STFNmemDefenderAppSecret" }
 #EndRegion ----------------------------------------------------- [AzureAD Variables] ----------------------------------------------
-
-#region----------------------------------------------------- [Classes] ----------------------------------------------
+#Region ----------------------------------------------------- [Script Variables] ----------------------------------------------
+$Global:ExitCode = 0
+$VerbosePreference = "SilentlyContinue"
+#EndRegion ----------------------------------------------------- [Script Variables] ----------------------------------------------
+#Region ----------------------------------------------------- [Classes] ----------------------------------------------
 class CustomException : Exception {
     [string] $additionalData
 
@@ -49,8 +24,7 @@ class CustomException : Exception {
         $this.additionalData = $additionalData
     }
 }
-#endregion----------------------------------------------------- [Classes] ----------------------------------------------
-
+#EndRegion ----------------------------------------------------- [Classes] ----------------------------------------------
 #Region -------------------------------------------------------- [Functions] ----------------------------------------------
 Function Write-Log {
     [CmdletBinding()]
@@ -84,19 +58,19 @@ Function Write-Log {
                 [string]$CompleteMsg = "[$LogDate $LogTime] [${Caller}] :: $Msg"
                 #Try {
                 if ($BackgroundColor -eq '') {
-                    $CompleteMsg | Write-Verbose
+                    $CompleteMsg | Write-Verbose -Verbose
                 }
                 else {
-                    $CompleteMsg | Write-Verbose
+                    $CompleteMsg | Write-Verbose -Verbose
                 }
-               # $CompleteMsg | Out-File -FilePath $LogPath -Append -NoClobber -Force -Encoding 'UTF8' -ErrorAction 'Stop' 
+                # $CompleteMsg | Out-File -FilePath $LogPath -Append -NoClobber -Force -Encoding 'UTF8' -ErrorAction 'Stop' 
             }
         }
     }
     End {}
 }
 
-function Write-Error2 {
+function Write-ErrorRunbook {
     [CmdletBinding()]
     Param (
         [Parameter(Mandatory = $false, Position = 0)]
@@ -122,18 +96,11 @@ function Write-Error2 {
     Process {
         $ErrorRecord | ForEach-Object {
             $errNumber = $ErrorRecord.count - $( $ErrorRecord.IndexOf($_))
-            $_.CategoryInfo | Write-Log -Caller "${CmdletName} Nr. $errNumber"  -Color Red
-            $_ | Write-Log -Caller "${CmdletName} Nr. $errNumber" -Color Red
-            $_.InvocationInfo.PositionMessage | Write-Log -Caller "${CmdletName} Nr. $errNumber" -Color Red
-            if ($Pause) {
-                Write-Log "Please review before continuing!" -BackgroundColor DarkMagenta -Color Yellow -Caller $CmdletName
-                Pause
-            }
+            "[${CmdletName} Nr. $errNumber] $_" | Write-Error
         }
     }
     End {}
 }
-
 function Get-ThreatProtectionToken {
     Begin {
         [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
@@ -153,7 +120,7 @@ function Get-ThreatProtectionToken {
             $authResponse.access_token
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "Error calling $SecurityAppIdUri")
         }
     }
@@ -177,7 +144,7 @@ function  Get-GraphToken {
             $connection.access_token
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "Error calling $GraphUrl")
         }
     }
@@ -203,8 +170,10 @@ function Get-JsonContent {
     End {
         try {
             if ($Web) {
-                Invoke-RestMethod 'https://.blob.core.windows.net/xxxxx/AdvancedHuntingTestQueries.json'
-            } else {
+                #Invoke-RestMethod 'https://stfnemeamemtransfer.blob.core.windows.net/testac/AdvancedHuntingTestQueries.json?sp=r&st=2023-08-06T19:49:39Z&se=2024-08-07T03:49:39Z&spr=https&sv=2022-11-02&sr=b&sig=3RlsQZ6vTbur%2F6T4YPDK7izF525uobv4zCJbZypjp4M%3D' -ErrorAction Stop
+                Invoke-RestMethod 'https://stfnemeamemtransfer.blob.core.windows.net/testac/AdvancedHuntingTestQueries%20-%20Copy%20(2).json?sp=r&st=2023-08-09T22:17:03Z&se=2024-01-01T07:17:03Z&spr=https&sv=2022-11-02&sr=b&sig=1sRo2rAayBjDJUdefZvWvgfAbGagJ9Xm8OGhqPNQZng%3D' -ErrorAction Stop
+            }
+            else {
                 if (Test-Path $JsonPath) {
                     Get-Content $JsonPath -Raw | ConvertFrom-Json 
                 }
@@ -212,7 +181,8 @@ function Get-JsonContent {
             }
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
+            throw [CustomException]::new( $CmdletName, "Error calling json url")
         }
     }
     
@@ -240,51 +210,19 @@ function Get-DefenderDevices {
                 Authorization  = "Bearer $Token_TP" 
             }
             $body = ConvertTo-Json -InputObject @{ 'Query' = $query }
-            $webResponse = Invoke-WebRequest -Method Post -Uri $AdvancedHuntingRunUrl -Headers $headers -Body $body -ErrorAction Stop
+            $webResponse = Invoke-WebRequest -Method Post -Uri $AdvancedHuntingRunUrl -Headers $headers -Body $body -UseBasicParsing -ErrorAction Stop
             $response = $webResponse | ConvertFrom-Json
             # $results = $response.Results
             # check if the AadDeviceId property is returned
             $response
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "Error calling $AdvancedHuntingRunUrl")
         }
     }
 }
 
-function  Format-DeviceList {
-    <#
-  .DESCRIPTION
-  Returns an ArrayList
-
- .Example
-   "AzureADDeviceId1","AzureADDeviceId2","AzureADDeviceId3" | Get-AADDeviceInfo
-#>
-    param (
-        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
-        [ValidateNotNull()]
-        [AllowEmptyString()]
-        # Mandatory. Specifies the message string.
-        [string]$JsonPath
-    )
-    Begin {
-        [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
-        $PSBoundParameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-Log -Caller $CmdletName }
-    }
-    End {
-        try {
-            if (Test-Path $JsonPath) {
-                Get-Content $JsonPath -Raw | ConvertFrom-Json 
-            }
-            else { throw "File not found: $JsonPath" }
-        }
-        catch {
-            Write-Error2
-        }
-    }
-    
-}
 function  Get-AllAADGroupMembers {
     param (
         [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
@@ -301,17 +239,62 @@ function  Get-AllAADGroupMembers {
         try {
             $headers = @{ 'Authorization' = "Bearer $Token_Graph" }
             $url = "https://graph.microsoft.com/v1.0/groups/$GroupId/members"
-            $response = Invoke-WebRequest -Uri $url -Headers $headers -Method Get -ErrorAction Stop
+            $response = Invoke-WebRequest -Uri $url -Headers $headers -Method Get -UseBasicParsing -ErrorAction Stop
             $response.Content | ConvertFrom-Json
             #check this when the group will have a few members..
             ($response.Content | ConvertFrom-Json).value | Select-Object -Property '@odata.type', 'id', 'deviceId', 'displayName' | Out-String | Write-Log -Caller $CmdletName
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $url")
         }
+    } 
+}
+function  Test-AADGroup {
+    <#
+  .DESCRIPTION
+  Check if the AzureAD group exists and the Id matches the name.
+  This is a safeguard in case of mistakes in the config file
+ .Example
+   Test-AADGroup -GroupId '0ed6c216-dde9-4a06-83fe-923f1e42c86a' -GroupName 'TestAADGroup1'
+#>
+    param (
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNull()]
+        [AllowEmptyString()]
+        # Mandatory. Specifies the message string.
+        [string]$GroupId,
+        [Parameter(Mandatory = $true, Position = 0, ValueFromPipeline = $true)]
+        [ValidateNotNull()]
+        [AllowEmptyString()]
+        # Mandatory. Specifies the message string.
+        [string]$GroupName
+    )
+    Begin {
+        [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
+        $PSBoundParameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-Log -Caller $CmdletName }
     }
-    
+    End {
+        try {
+            $headers = @{ 'Authorization' = "Bearer $Token_Graph" }
+            $url = "https://graph.microsoft.com/v1.0/groups/$GroupId"
+            $response = Invoke-WebRequest -Uri $url -Headers $headers -Method Get -UseBasicParsing -ErrorAction Stop
+            $GroupInfo = $response.Content | ConvertFrom-Json
+            #check this when the group will have a few members..
+            if ($GroupInfo.displayName -eq $GroupName) {
+                Write-Log 'Group Name & Id match.' -Caller $CmdletName
+                return $true
+            }
+            else {
+                Write-Log "The provided Group name: '$GroupName' doesn't match the actual Group display name: '$($GroupInfo.displayName)' for GroupId: '$GroupId'." -Caller $CmdletName
+                return $false
+            }
+        }
+        catch {
+            Write-Log $_ -Caller $CmdletName
+            return $false
+        }
+    } 
 }
 
 function  Get-AADDeviceInfo {
@@ -357,7 +340,7 @@ function  Get-AADDeviceInfo {
             }
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $urlListDevices ")
         }
     }
@@ -413,7 +396,7 @@ function  Add-AADGroupMembers {
             }
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $url")
         }
         Write-Log "Ended" -Caller $CmdletName
@@ -448,7 +431,7 @@ function  Remove-AADGroupMember {
             $response = Invoke-RestMethod -Headers $headers -Uri $url -Method Delete -ErrorAction Stop
         }
         catch {
-            Write-Error2
+            Write-ErrorRunbook
             throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $url")
         }
         #Write-Log "Next batch of ObjectIds:" -Caller $CmdletName # comment this later on
@@ -457,55 +440,78 @@ function  Remove-AADGroupMember {
     End {
     }
 }
-#Region -------------------------------------------------------- [Functions] ----------------------------------------------
+#EndRegion -------------------------------------------------------- [Functions] ----------------------------------------------
 
-$Token_TP = Get-ThreatProtectionToken
-$Token_Graph = Get-GraphToken
-$JsonObjects = Get-JsonContent -Web #-JsonPath "C:\Git\APIs\AdvancedHuntingTestQueries.json"
-if ($JsonObjects.count -eq 0) { throw 'Json is null' }
-# For each Json object get the devices from defender and update the AAD group membership
-$JsonObjects | ForEach-Object {
-    $DefenderDevices = Get-DefenderDevices -Query $_.AdvancedHuntingQuery
-    # $DefenderDevices.Results | Where-Object { $_.AadDeviceId -ne '' } | Select-Object DeviceId, AadDeviceId, DeviceName, OSPlatform, OSBuild | Out-String | Write-Log -Caller 'Get-DevicesCurrentQuery'
-    if ([string]::IsNullOrEmpty(( $DefenderDevices.Results))) {
-        throw [CustomException]::new( 'Get-CurrentJsonQueryResults', 'The current query did not returned any results.')
-    }
-    if ($DefenderDevices.Schema.Name -notcontains 'AadDeviceId') {
-        throw [CustomException]::new( 'Get-CurrentJsonQueryAadDeviceId', 'The return objects(s) do not contain an AadDeviceId property. Check the query. AadDeviceId is required.')
-    }
-    # Get unique devices only
-    $DefenderQueyAadDeviceIds = ($DefenderDevices.Results | Group-Object -Property 'AadDeviceId' | Where-Object { $_.Name }).Name
-    $DefenderQueyAadDeviceIds | Out-String | Write-Log -Caller 'Get-DefenderQueryUniqueAadDeviceIds'
-    $UniqueDeviceList = New-Object System.Collections.Generic.List[System.Object]
-    $UniqueDeviceList = ($DefenderQueyAadDeviceIds | Get-AADDeviceInfo).Id
-    # Get all existing group members (devices only) to compare them later on
-    #$CurrentMembers = Get-MgGroupMember -GroupId $_.AzureADGroupId -All | Where-Object {$_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.device'}
-    $GroupData = Get-AllAADGroupMembers -GroupId $_.AzureADGroupId
-    # if the group is empty, just add whatever the query returns.
-    #if ([string]::IsNullOrEmpty(($GroupData.Content | ConvertFrom-Json).value)) {
-    if ([string]::IsNullOrEmpty(($GroupData.value))) {
-        Add-AADGroupMembers -AllObjectIds $UniqueDeviceList -GroupId $_.AzureADGroupId
-    }
-    else {
-        # difference between two groups, to remove/add elements
-        $Differences = Compare-Object -ReferenceObject $GroupData.value.id -DifferenceObject $UniqueDeviceList
-        $ObjToBeAdded = ($Differences | Where-Object { $_.SideIndicator -eq '=>' }).InputObject
-        $ObjToBeRemoved = ($Differences | Where-Object { $_.SideIndicator -eq '<=' }).InputObject
-        if ($ObjToBeAdded) {
-            Add-AADGroupMembers -AllObjectIds $ObjToBeAdded -GroupId $_.AzureADGroupId 
-        }
-        else {
-            Write-Log 'No Objects to be added' -Caller 'Get-ObjectsToBeAdded'
-        }
-        if ($ObjToBeRemoved) {
-            $ObjToBeRemoved | Remove-AADGroupMember -GroupId $_.AzureADGroupId 
-        }
-        else {
-            Write-Log 'No Objects to be removed' -Caller 'Get-ObjectsToBeRemoved'
-        }
+try {
+    $CurrentJsonObject = 1
+    $JsonObjects = Get-JsonContent -Web
+    $Token_TP = Get-ThreatProtectionToken
+    $Token_Graph = Get-GraphToken
+    $JsonObjects | ForEach-Object {
+        Write-Log "--------------------------------------------------------------------------------" -Caller "JsonEntry $CurrentJsonObject"
+        #        Write-Log "Processing AzureAD Group: '$($_.AzureADGroupName)' Id: '$($_.AzureADGroupId)'" -Caller "JsonEntry $CurrentJsonObject"
+        if (Test-AADGroup -GroupId $_.AzureADGroupId -GroupName $_.AzureADGroupName) {
+            $DefenderDevices = Get-DefenderDevices -Query $_.AdvancedHuntingQuery
+            # $DefenderDevices.Results | Where-Object { $_.AadDeviceId -ne '' } | Select-Object DeviceId, AadDeviceId, DeviceName, OSPlatform, OSBuild | Out-String | Write-Log -Caller 'Get-DevicesCurrentQuery'
+            if ([string]::IsNullOrEmpty(( $DefenderDevices.Results))) {
+                throw [CustomException]::new( 'Get-CurrentJsonQueryResults', 'The current query did not returned any results.')
+            }
+            if ($DefenderDevices.Schema.Name -notcontains 'AadDeviceId') {
+                throw [CustomException]::new( 'Get-CurrentJsonQueryAadDeviceId', 'The return objects(s) do not contain an AadDeviceId property. Check the query. AadDeviceId is required.')
+            }
+            # Get unique devices only
+            $DefenderQueyAadDeviceIds = ($DefenderDevices.Results | Group-Object -Property 'AadDeviceId' | Where-Object { $_.Name }).Name
+            $DefenderQueyAadDeviceIds | Out-String | Write-Log -Caller 'Get-DefenderQueryUniqueAadDeviceIds'
+            $UniqueDeviceList = New-Object System.Collections.Generic.List[System.Object]
+            $UniqueDeviceList = ($DefenderQueyAadDeviceIds | Get-AADDeviceInfo).Id
+            # Get all existing group members (devices only) to compare them later on
+            #$CurrentMembers = Get-MgGroupMember -GroupId $_.AzureADGroupId -All | Where-Object {$_.AdditionalProperties.'@odata.type' -eq '#microsoft.graph.device'}
+            $GroupData = Get-AllAADGroupMembers -GroupId $_.AzureADGroupId
+            # if the group is empty, just add whatever the query returns.
+            #if ([string]::IsNullOrEmpty(($GroupData.Content | ConvertFrom-Json).value)) {
+            if ($GroupData.value.Count -eq 0) {
+                Add-AADGroupMembers -AllObjectIds $UniqueDeviceList -GroupId $_.AzureADGroupId
+            }
+            else {
+                # difference between two groups, to remove/add elements
+                $Differences = Compare-Object -ReferenceObject $GroupData.value.id -DifferenceObject $UniqueDeviceList
+                $ObjToBeAdded = ($Differences | Where-Object { $_.SideIndicator -eq '=>' }).InputObject
+                $ObjToBeRemoved = ($Differences | Where-Object { $_.SideIndicator -eq '<=' }).InputObject
+                if ($ObjToBeAdded) {
+                    Add-AADGroupMembers -AllObjectIds $ObjToBeAdded -GroupId $_.AzureADGroupId 
+                }
+                else {
+                    Write-Log 'No Objects to be added.' -Caller 'Get-ObjectsToBeAdded'
+                }
+                if ($ObjToBeRemoved) {
+                    $ObjToBeRemoved | Remove-AADGroupMember -GroupId $_.AzureADGroupId 
+                }
+                else {
+                    Write-Log 'No Objects to be removed.' -Caller 'Get-ObjectsToBeRemoved'
+                }
+            }
+        } 
+        $CurrentJsonObject += 1
     }
 }
-
-#New-MgGroup -BodyParameter $params
-#poate scoti access tokens din parametrii ca sa nu apara in log si folosesti variablila globala
-#check if group name matches the group id to avoid mistakes
+catch {
+    switch ($_.Exception.Message) {
+        'Get-ThreatProtectionToken' { $Global:ExitCode = 101 }
+        'Get-GraphToken' { $Global:ExitCode = 102 }
+        'Get-JsonContent' { $Global:ExitCode = 103 }
+        'Get-DefenderDevices' { $Global:ExitCode = 104 }
+        'Get-AllAADGroupMembers' { $Global:ExitCode = 105 }
+        'Get-AADDeviceInfo' { $Global:ExitCode = 106 }
+        'Add-AADGroupMembers' { $Global:ExitCode = 107 }
+        'Remove-AADGroupMember' { $Global:ExitCode = 108 }
+        Default { $Global:ExitCode = 300 }
+    }
+}
+finally {
+    if ($Global:ExitCode -ne 0) {
+        Write-ErrorRunbook
+        Write-Log "Execution completed with exit code: $Global:ExitCode" -Caller 'TheEnd'
+        throw $_
+    }
+    Write-Log "Execution completed with exit code: $Global:ExitCode" -Caller 'TheEnd'
+}
