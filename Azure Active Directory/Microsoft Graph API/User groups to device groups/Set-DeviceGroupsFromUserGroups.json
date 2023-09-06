@@ -1,0 +1,21 @@
+[
+    {
+		"Creator":"Adrian Cojocaru",
+		"Description":"Updating Adi.Cojo-All-Devices group with devices from Adi.Cojo-All-User group.",
+        "UserAzureADGroupId":"6275d5e1-5fd9-44a4-a70d-768d36a8d087",
+        "UserAzureADGroupName":"Adi.Cojo-All-User",
+        "DeviceAzureADGroupId":"48569b79-0eec-4674-a629-6dd7421db734",
+        "DeviceAzureADGroupName":"Adi.Cojo-All-Devices",
+		"OSList":"Windows"
+    },
+	    {
+		"Creator":"Adrian Cojocaru",
+		"Description":"Updating Adrian.Cojocaru-All-Devices group with devices from Adrian.Cojocaru-All-User group.",
+        "UserAzureADGroupId":"0f7647c9-1146-4919-afa1-3e99afece0b7",
+        "UserAzureADGroupName":"Adrian.Cojocaru-All-User",
+        "DeviceAzureADGroupId":"670a4ef5-04db-4113-b540-2b2239696810",
+        "DeviceAzureADGroupName":"Adrian.Cojocaru-All-Devices",
+		"OSList":"Windows"
+    }
+	
+]
