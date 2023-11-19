@@ -10,38 +10,36 @@
 
 <#
   .SYNOPSIS
-  Updates AzureAD group membership based on Defender advanced hunting queries.
+  Updates AzureAD group membership based on Microsoft 365 Defender advanced hunting queries.
   .DESCRIPTION
   The scrip is meant to run in a Runbook.
   An external *.json file stored on blob storage contains the AzureAD group Id & Name to be updated and also the Advanced Hunting query for Microsoft 365 Defender.
   This script reads the Json file and for each section it will update the AzureAD group membershipp with devices returned from the query.
   The advanced hunting query MUST return the AadDeviceId of each device.
+  See the attached pdf for more info.
   App registration permissions:
   Microsoft Graph (2)	
     Device.Read.All
     GroupMember.ReadWrite.All
   Microsoft Threat Protection (1)	
     AdvancedHunting.Read.All
-  .PARAMETER JsonPath
-  HTTPS path to the json file. "AdvancedHunting-AADGroups.json" can be used as an example
-  .PARAMETER tenantId
-  AzureAD tenant Id
-  .PARAMETER clientId
-  Application (client) Id
-  .PARAMETER appSecret
-  Application (client) secret
   
   .EXAMPLE
   .\AdvancedHunting-AADGroups.ps1
 #>
 #Region ----------------------------------------------------- [AzureAD Variables] ----------------------------------------------
-[string]$tenantId = if ($env:AZUREPS_HOST_ENVIRONMENT) { Get-AutomationVariable -Name "TenantId" } else { $env:TenantId }
-[string]$clientId = if ($env:AZUREPS_HOST_ENVIRONMENT) { Get-AutomationVariable -Name "DefenderAppClientId" } else { $env:DefenderAppClientId }
-[string]$appSecret = if ($env:AZUREPS_HOST_ENVIRONMENT) { Get-AutomationVariable -Name "DefenderAppSecret" } else { $env:DefenderAppSecret }
+[string]$ApplicationId = if ($env:AZUREPS_HOST_ENVIRONMENT -or $PSPrivateMetadata.JobId) { Get-AutomationVariable -Name "DWC-EUD-Automation_AppId" }else { $env:STFNmemDefenderAppClientId }
+#[string]$ApplicationSecret = if ($env:AZUREPS_HOST_ENVIRONMENT -or $PSPrivateMetadata.JobId) { Get-AutomationVariable -Name "DWC-EUD-Automation_AppSecret" } else { $env:STFNmemDefenderAppSecret }
+[string]$Thumbprint = if ($env:AZUREPS_HOST_ENVIRONMENT -or $PSPrivateMetadata.JobId) { Get-AutomationVariable -Name "DWC-EUD-Automation_CertThumbprint" } else { $env:STFNmemDefenderAppCertThumbprint }
+[string]$TenantId = if ($env:AZUREPS_HOST_ENVIRONMENT -or $PSPrivateMetadata.JobId) { Get-AutomationVariable -Name "TenantId" }else { $env:STFNmemTenantId }
 [string]$JsonPath = 'https://dwmemautomation.blob.core.windows.net/testXMA%3D'
 #EndRegion ----------------------------------------------------- [AzureAD Variables] ----------------------------------------------
 #Region ----------------------------------------------------- [Script Variables] ----------------------------------------------
 [version]$ScriptVersion = [version]'1.0.0'
+$Global:GraphTokenRefreshLimit = 24
+$Global:GraphTokenRefreshCount = 0
+$Global:GatewayTimeoutCountLimit = 24
+$Global:GatewayTimeoutCount = 0
 $Global:ExitCode = 0
 $VerbosePreference = "SilentlyContinue"
 #EndRegion ----------------------------------------------------- [Script Variables] ----------------------------------------------
@@ -130,54 +128,70 @@ function Write-ErrorRunbook {
     }
     End {}
 }
-function Get-ThreatProtectionToken {
+function Get-Token {
+    <#
+  .DESCRIPTION
+  Get Authentication token from Microsoft Graph (default) or Threat Protection.
+  Authentication can be done with a Certificate  Thumbprint (default) or ApplicationId Id & ApplicationSecret.
+  $Thumbprint variable needs to be initialized before calling the function
+  For ApplicationId & ApplicationSecret the $ApplicationId & $ApplicationSecret variables need to be initialized before calling the function.
+ .Example
+   Get a token for Graph using certificate thumbprint (default behaviour)
+   Get-Token
+ .Example
+   Get a token for Defender's ThreatProtection using certificate thumbprint
+   Get-Token -ThreatProtection
+ .Example
+   Get a token for Defender's ThreatProtection using ApplicationId & ApplicationSecret
+   For ApplicationId & ApplicationSecret the variables need to be defined before calling the function: $ApplicationId & $ApplicationSecret
+   Get-Token -ThreatProtection -AppIdSecret
+#>
+    param (
+        [Parameter(Mandatory = $false, Position = 0)]
+        [switch]$ThreatProtection,
+        [Parameter(Mandatory = $false, Position = 1)]
+        [switch]$AppIdSecret
+    )
     Begin {
         [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
         $PSBoundParameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-LogRunbook -Caller $CmdletName }
     }
     End {
         try {
-            $SecurityAppIdUri = 'https://api.security.microsoft.com'
-            $oAuthUri = "https://login.windows.net/$tenantId/oauth2/token"
-            $authBody = [Ordered] @{
-                resource      = $SecurityAppIdUri
-                client_id     = $clientId
-                client_secret = $appSecret
-                grant_type    = 'client_credentials'
+            $url = if ($ThreatProtection) { 'https://api.security.microsoft.com' } else { 'https://graph.microsoft.com' }
+            Write-LogRunbook "url = $url" -Caller $CmdletName
+            if ($AppIdSecret) {
+                $body = [Ordered] @{
+                    grant_type    = 'client_credentials'
+                    client_id     = $ApplicationId
+                    client_secret = $ApplicationSecret  
+                }
+                if ($ThreatProtection) {
+                    $oAuthUrl = "https://login.windows.net/$TenantId/oauth2/token"
+                    $body.Add('resource', $url)
+                }
+                else {
+                    $oAuthUrl = "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" 
+                    $body.Add('scope', $url + '/.default')
+                }
+                Write-LogRunbook "oAuthUrl = $oAuthUrl" -Caller $CmdletName
+                [string]$Token = (Invoke-RestMethod -Method Post -Uri $oAuthUrl -Body $body -ErrorAction Stop).access_token
             }
-            $authResponse = Invoke-RestMethod -Method Post -Uri $oAuthUri -Body $authBody -ErrorAction Stop
-            $authResponse.access_token
+            else {
+                # certificate auth
+                if (-not (Get-AzContext)) {
+                    Write-LogRunbook "No AzContext. Running Connect-AzAccount" -Caller $CmdletName
+                    Connect-AzAccount -CertificateThumbprint $Thumbprint -ApplicationId $ApplicationId -Tenant $TenantId -ServicePrincipal
+                }
+                [string]$Token = (Get-AzAccessToken -ResourceUrl $url).Token
+            }
+            $Token
         }
         catch {
             Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "Error calling $SecurityAppIdUri")
+            throw [CustomException]::new( $CmdletName, "Error calling https://api.security.microsoft.com")
         }
     }
-}
-function  Get-GraphToken {
-    Begin {
-        [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
-        $PSBoundParameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-LogRunbook -Caller $CmdletName }
-    }
-    End {
-        try {
-            $GraphUrl = "https://login.microsoftonline.com/$tenantid/oauth2/v2.0/token"
-            $body = @{
-                Grant_Type    = "client_credentials"
-                Scope         = "https://graph.microsoft.com/.default"
-                Client_Id     = $clientId
-                Client_Secret = $appSecret
-            }
-              
-            $connection = Invoke-RestMethod -Method Post -Uri $GraphUrl -Body $body -ErrorAction Stop
-            $connection.access_token
-        }
-        catch {
-            Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "Error calling $GraphUrl")
-        }
-    }
-    
 }
 function Get-JsonContent {
     param (
@@ -246,8 +260,24 @@ function Get-DefenderDevices {
             $response
         }
         catch {
-            Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "Error calling $AdvancedHuntingRunUrl")
+            switch ($_.Exception.Response.StatusCode) {
+                'Unauthorized' {
+                    if ($Global:GraphTokenRefreshCount -lt $Global:GraphTokenRefreshLimit) {
+                        Write-LogRunbook "Token expired. Getting a new one. GraphTokenRefreshCount: '$Global:GraphTokenRefreshCount'" -Caller $CmdletName
+                        $global:Token_TP = Get-Token -ThreatProtection
+                        $Global:GraphTokenRefreshCount++
+                        Get-DefenderDevices @PSBoundParameters
+                    }
+                    else {
+                        Write-ErrorRunbook
+                        throw [CustomException]::new( $CmdletName, "GraphTokenRefreshLimit '$Global:GraphTokenRefreshCount' reached! ")
+                    }
+                }
+                Default {
+                    Write-ErrorRunbook
+                    throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling '$url'")
+                }
+            }
         }
     }
 }
@@ -263,19 +293,52 @@ function  Get-AllAADGroupMembers {
     Begin {
         [string]${CmdletName} = $PSCmdlet.MyInvocation.MyCommand.Name
         $PSBoundParameters.GetEnumerator() | Sort-Object -Property Name | ForEach-Object { "$($_.Key) = $($_.Value)" | Write-LogRunbook -Caller $CmdletName }
+        $GroupMembersList = @()
+        $count = 0
     }
     End {
         try {
             $headers = @{ 'Authorization' = "Bearer $Token_Graph" }
             $url = "https://graph.microsoft.com/v1.0/groups/$GroupId/members"
-            $response = Invoke-WebRequest -Uri $url -Headers $headers -Method Get -UseBasicParsing -ErrorAction Stop
-            $response.Content | ConvertFrom-Json
+            $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get -UseBasicParsing -ErrorAction Stop
+            #$response.Content | ConvertFrom-Json
             #check this when the group will have a few members..
-            ($response.Content | ConvertFrom-Json).value | Select-Object -Property '@odata.type', 'id', 'deviceId', 'displayName' | Out-String | Write-LogRunbook -Caller $CmdletName
+            $response.value | Select-Object -Property '@odata.type', 'id', 'deviceId', 'displayName' | Out-String | Write-LogRunbook -Caller $CmdletName
+            if ($response.value) { $GroupMembersList += $response.value }
+            while ($response.'@odata.nextLink') {
+                $count++
+                Write-LogRunbook "Current @odata.nextLink: $count" -Caller $CmdletName
+                #Start-Sleep -Seconds 1
+                $response = Invoke-RestMethod -Headers $headers -Uri $response.'@odata.nextLink' -Method Get -ErrorAction Stop
+                if ($response.value) { 
+                    $response.value | Select-Object -Property '@odata.type', 'id', 'deviceId', 'displayName' | Out-String | Write-LogRunbook -Caller $CmdletName
+                    $GroupMembersList += $response.value 
+                }
+            }
+            $GroupMembersList
         }
         catch {
-            Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $url")
+            switch ($_.Exception.Response.StatusCode) {
+                'Unauthorized' {
+                    if ($Global:GraphTokenRefreshCount -lt $Global:GraphTokenRefreshLimit) {
+                        Write-LogRunbook "Token expired. Getting a new one. GraphTokenRefreshCount: '$Global:GraphTokenRefreshCount'" -Caller $CmdletName
+                        $global:Token_Graph = Get-Token
+                        $Global:GraphTokenRefreshCount++
+                        Get-AllAADGroupMembers @PSBoundParameters
+                    }
+                    else {
+                        Write-ErrorRunbook
+                        throw [CustomException]::new( $CmdletName, "GraphTokenRefreshLimit '$Global:GraphTokenRefreshCount' reached! ")
+                    }
+                }
+                'NotFound' { 
+                    Write-LogRunbook "AzureAD object not found." -Caller $CmdletName
+                }
+                Default {
+                    Write-ErrorRunbook
+                    throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling '$url'")
+                }
+            }
         }
     } 
 }
@@ -320,8 +383,27 @@ function  Test-AADGroup {
             }
         }
         catch {
-            Write-LogRunbook $_ -Caller $CmdletName
-            return $false
+            switch ($_.Exception.Response.StatusCode) {
+                'Unauthorized' {
+                    if ($Global:GraphTokenRefreshCount -lt $Global:GraphTokenRefreshLimit) {
+                        Write-LogRunbook "Token expired. Getting a new one. GraphTokenRefreshCount: '$Global:GraphTokenRefreshCount'" -Caller $CmdletName
+                        $global:Token_Graph = Get-Token
+                        $Global:GraphTokenRefreshCount++
+                        Test-AADGroup @PSBoundParameters
+                    }
+                    else {
+                        Write-ErrorRunbook
+                        throw [CustomException]::new( $CmdletName, "GraphTokenRefreshLimit '$Global:GraphTokenRefreshCount' reached! ")
+                    }
+                }
+                'NotFound' { 
+                    Write-LogRunbook "AzureAD object not found." -Caller $CmdletName
+                }
+                Default {
+                    Write-ErrorRunbook
+                    throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling '$url'")
+                }
+            }
         }
     } 
 }
@@ -369,8 +451,27 @@ function  Get-AADDeviceInfo {
             }
         }
         catch {
-            Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $urlListDevices ")
+            switch ($_.Exception.Response.StatusCode) {
+                'Unauthorized' {
+                    if ($Global:GraphTokenRefreshCount -lt $Global:GraphTokenRefreshLimit) {
+                        Write-LogRunbook "Token expired. Getting a new one. GraphTokenRefreshCount: '$Global:GraphTokenRefreshCount'" -Caller $CmdletName
+                        $global:Token_Graph = Get-Token
+                        $Global:GraphTokenRefreshCount++
+                        Get-AADDeviceInfo @PSBoundParameters
+                    }
+                    else {
+                        Write-ErrorRunbook
+                        throw [CustomException]::new( $CmdletName, "GraphTokenRefreshLimit '$Global:GraphTokenRefreshCount' reached! ")
+                    }
+                }
+                'NotFound' { 
+                    Write-LogRunbook "DeviceId $DeviceId not found." -Caller $CmdletName
+                }
+                Default {
+                    Write-ErrorRunbook
+                    throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling '$url'")
+                }
+            }
         }
     }
     End {
@@ -414,19 +515,39 @@ function  Add-AADGroupMembers {
             $AllObjectIds | ForEach-Object { $ObjIdsToBeAdded.Add("https://graph.microsoft.com/v1.0/directoryObjects/$_") }
             while ($CurrentCount -lt $AllObjectIds.count) {
                 $body = @{}
+                # A maximum of 20 objects can be added in a single request
                 $NewCount = $CurrentCount + 19
-                Write-LogRunbook "Batch of objects to be added:" -Caller $CmdletName
+                Write-LogRunbook "Batch of objects to be added in current request:" -Caller $CmdletName
                 $ObjIdsToBeAdded[$CurrentCount..$NewCount] | Out-String | Write-LogRunbook -Caller $CmdletName   
                 $body.Add("members@odata.bind", $ObjIdsToBeAdded[$CurrentCount..$NewCount])
                 $bodyJSON = $body | ConvertTo-Json
                 $response = Invoke-RestMethod -Headers $headers -Uri $urlMultiObj -Method Patch -Body $bodyJSON -ErrorAction Stop
-                Write-LogRunbook "Objects added. StatusCode = $($response.StatusCode)" -Caller $CmdletName
+                Write-LogRunbook "Objects added." -Caller $CmdletName
                 $CurrentCount = $NewCount + 1
             }
         }
         catch {
-            Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $url")
+            switch ($_.Exception.Response.StatusCode) {
+                'Unauthorized' {
+                    if ($Global:GraphTokenRefreshCount -lt $Global:GraphTokenRefreshLimit) {
+                        Write-LogRunbook "Token expired. Getting a new one. GraphTokenRefreshCount: '$Global:GraphTokenRefreshCount'" -Caller $CmdletName
+                        $global:Token_Graph = Get-Token
+                        $Global:GraphTokenRefreshCount++
+                        Add-AADGroupMembers @PSBoundParameters
+                    }
+                    else {
+                        Write-ErrorRunbook
+                        throw [CustomException]::new( $CmdletName, "GraphTokenRefreshLimit '$Global:GraphTokenRefreshCount' reached! ")
+                    }
+                }
+                'NotFound' { 
+                    Write-LogRunbook "AzureAD object not found." -Caller $CmdletName
+                }
+                Default {
+                    Write-ErrorRunbook
+                    throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling '$url'")
+                }
+            }
         }
         Write-LogRunbook "Ended" -Caller $CmdletName
     }
@@ -460,8 +581,27 @@ function  Remove-AADGroupMember {
             $response = Invoke-RestMethod -Headers $headers -Uri $url -Method Delete -ErrorAction Stop
         }
         catch {
-            Write-ErrorRunbook
-            throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling $url")
+            switch ($_.Exception.Response.StatusCode) {
+                'Unauthorized' {
+                    if ($Global:GraphTokenRefreshCount -lt $Global:GraphTokenRefreshLimit) {
+                        Write-LogRunbook "Token expired. Getting a new one. GraphTokenRefreshCount: '$Global:GraphTokenRefreshCount'" -Caller $CmdletName
+                        $global:Token_Graph = Get-Token
+                        $Global:GraphTokenRefreshCount++
+                        Remove-AADGroupMember @PSBoundParameters
+                    }
+                    else {
+                        Write-ErrorRunbook
+                        throw [CustomException]::new( $CmdletName, "GraphTokenRefreshLimit '$Global:GraphTokenRefreshCount' reached! ")
+                    }
+                }
+                'NotFound' { 
+                    Write-LogRunbook "AzureAD object not found." -Caller $CmdletName
+                }
+                Default {
+                    Write-ErrorRunbook
+                    throw [CustomException]::new( $CmdletName, "$($response.StatusCode) StatusCode calling '$url'")
+                }
+            }
         }
         #Write-LogRunbook "Next batch of ObjectIds:" -Caller $CmdletName # comment this later on
         #$ObjectIds | Out-String | Write-LogRunbook -Caller $CmdletName # comment this later on
@@ -475,8 +615,10 @@ try {
     Write-LogRunbook "---------------------------- $ScriptVersion -----------------------" -Caller "ScriptVersion"
     $CurrentJsonObject = 1
     $JsonObjects = Get-JsonContent -JsonFilePath $JsonPath -Web
-    $Token_TP = Get-ThreatProtectionToken
-    $Token_Graph = Get-GraphToken
+    $Token_Graph = Get-Token
+    #$Token_Graph = ''
+    $Token_TP = Get-Token -ThreatProtection
+    #$Token_TP = ''
     $JsonObjects | ForEach-Object {
         Write-LogRunbook "--------------------------------------------------------------------------------" -Caller "JsonEntry $CurrentJsonObject"
         #        Write-LogRunbook "Processing AzureAD Group: '$($_.AzureADGroupName)' Id: '$($_.AzureADGroupId)'" -Caller "JsonEntry $CurrentJsonObject"
@@ -492,6 +634,7 @@ try {
                     Write-LogRunbook 'The return objects(s) do not contain an AadDeviceId property. Check the query. AadDeviceId is required.' -Caller 'Get-CurrentJsonQueryAadDeviceId'
                     throw [CustomQueryException]::new( 'Get-CurrentJsonQueryAadDeviceId', 'The return objects(s) do not contain an AadDeviceId property. Check the query. AadDeviceId is required.')
                 }
+                Write-Output "$($_.AdvancedHuntingQuery) returned $($($($DefenderDevices).Results).Count) devices."
                 # Get unique devices only
                 $DefenderQueyAadDeviceIds = ($DefenderDevices.Results | Group-Object -Property 'AadDeviceId' | Where-Object { $_.Name }).Name
                 $DefenderQueyAadDeviceIds | Out-String | Write-LogRunbook -Caller 'Get-DefenderQueryUniqueAadDeviceIds'
@@ -502,43 +645,53 @@ try {
                 $GroupData = Get-AllAADGroupMembers -GroupId $_.AzureADGroupId
                 # if the group is empty, just add whatever the query returns.
                 #if ([string]::IsNullOrEmpty(($GroupData.Content | ConvertFrom-Json).value)) {
-                if ($GroupData.value.Count -eq 0) {
+                    [int]$CurrentMemberCount = $GroupData.Count
+                if ($CurrentMemberCount -eq 0) {
                     Add-AADGroupMembers -AllObjectIds $UniqueDeviceList -GroupId $_.AzureADGroupId
                 }
                 else {
                     # difference between two groups, to remove/add elements
-                    $Differences = Compare-Object -ReferenceObject $GroupData.value.id -DifferenceObject $UniqueDeviceList
+                    $Differences = Compare-Object -ReferenceObject $GroupData.id -DifferenceObject $UniqueDeviceList
                     $ObjToBeAdded = ($Differences | Where-Object { $_.SideIndicator -eq '=>' }).InputObject
                     $ObjToBeRemoved = ($Differences | Where-Object { $_.SideIndicator -eq '<=' }).InputObject
+                    
+                    if ($ObjToBeRemoved) {
+                        # Protection against removing all members
+                        if ($CurrentMemberCount * 0.99 -ge $ObjToBeRemoved.Count) {
+                            $ObjToBeRemoved | Remove-AADGroupMember -GroupId $_.AzureADGroupId 
+                        }
+                        else {
+                            Write-LogRunbook "An attempt was made to remove more than 99% of the members for the group: '$($_.AzureADGroupName)' Id: $($_.AzureADGroupId). Double check this is correct." -Caller 'Remove-AllGroupMembers'
+                            throw [CustomException]::new( 'Remove-AllGroupMembers', "An attampt was made to remove more than 99% of the members for the group: '$($_.AzureADGroupName)' Id: $($_.AzureADGroupId). Double check this is correct.")
+                        }
+                    }
+                    Write-LogRunbook "Removed $($ObjToBeRemoved.count) objects." -Caller 'Get-ObjectsToBeRemoved'
                     if ($ObjToBeAdded) {
                         Add-AADGroupMembers -AllObjectIds $ObjToBeAdded -GroupId $_.AzureADGroupId 
                     }
                     Write-LogRunbook "Added $($ObjToBeAdded.count) objects." -Caller 'Get-ObjectsToBeAdded'
-
-                    if ($ObjToBeRemoved) {
-                        $ObjToBeRemoved | Remove-AADGroupMember -GroupId $_.AzureADGroupId 
-                    }
-                    Write-LogRunbook "Removed $($ObjToBeRemoved.count) objects." -Caller 'Get-ObjectsToBeRemoved'
-
+                    # try-catch jump to here if required to avoid err
                 }
+                Write-Output "Group: '$($_.AzureADGroupName)' Id: $($_.AzureADGroupId) Member count before: $CurrentMemberCount Devices added: $($ObjToBeAdded.count) Devices removed: $($ObjToBeRemoved.count)"
             }
             catch [CustomQueryException] {
                 Write-LogRunbook "Query results unusable. Skipped."  -Caller 'Invalid-Results'
             }
-        } 
+        }
+        else { Write-Output "Group: '$($_.AzureADGroupName)' Id: $($_.AzureADGroupId) skipped." }
         $CurrentJsonObject += 1
     }
 }
 catch {
     switch ($_.Exception.Message) {
-        'Get-ThreatProtectionToken' { $Global:ExitCode = 101 }
-        'Get-GraphToken' { $Global:ExitCode = 102 }
+        'Get-Token' { $Global:ExitCode = 102 }
         'Get-JsonContent' { $Global:ExitCode = 103 }
         'Get-DefenderDevices' { $Global:ExitCode = 104 }
         'Get-AllAADGroupMembers' { $Global:ExitCode = 105 }
         'Get-AADDeviceInfo' { $Global:ExitCode = 106 }
         'Add-AADGroupMembers' { $Global:ExitCode = 107 }
         'Remove-AADGroupMember' { $Global:ExitCode = 108 }
+        'Remove-AllGroupMembers'  { $Global:ExitCode = 109 }
         Default { $Global:ExitCode = 300 }
     }
     Write-ErrorRunbook
