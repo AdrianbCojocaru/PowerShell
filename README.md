@@ -1,2 +1,1 @@
-# SCCM
-# Active Directory
+
