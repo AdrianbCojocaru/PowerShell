@@ -19,7 +19,7 @@
   <Brief description of parameter input required. Repeat this attribute if required>
 
 .INPUTS
-  Applications names that will be migrated are read from the $PSScriptRoot\Data\AppList.txt file
+  Applications names that will be migrated are read from the $PSScriptRoot\Data\AppList.txt file.
 
 .OUTPUTS
   A migration report gets created under the $PSScriptRoot folder
