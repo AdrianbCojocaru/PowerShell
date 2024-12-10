@@ -13,7 +13,7 @@
 
 .DESCRIPTION
   This script takes an application and its metadata from SCCM and converts it to an Intune app using IntuneWinAppUtil.exe
-  IntuneWinAppUtil.exe should be placed under "$PSScriptRoot\Data"
+  IntuneWinAppUtil.exe should be placed under "$PSScriptRoot\Data".
 
 .PARAMETER <Parameter_Name>
   <Brief description of parameter input required. Repeat this attribute if required>
